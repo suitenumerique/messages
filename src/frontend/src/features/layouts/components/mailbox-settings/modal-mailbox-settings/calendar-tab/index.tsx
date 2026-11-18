@@ -17,6 +17,8 @@ export const MailboxSettingsCalendarTab = ({ mailbox }: { mailbox: Mailbox }) =>
     const { data } = useMailboxCalendars(mailbox.id);
     const webUrl = data?.data.web_url;
     const linked = (data?.data.calendars ?? []).filter((calendar) => calendar.linked);
+    // Someone may have shared it with you read-only.
+    const canSave = linked.some((calendar) => calendar.writable !== false);
 
     return (
         <div className="mailbox-settings__tab mailbox-settings__calendar-tab">
@@ -38,9 +40,13 @@ export const MailboxSettingsCalendarTab = ({ mailbox }: { mailbox: Mailbox }) =>
                 ))}
                 <p className="mailbox-settings__section-description">
                     {linked.length > 0
-                        ? `${t("Shared with everyone who has access to this mailbox.")} ${t(
-                              "Invitations are saved here and checked for conflicts. You can check more calendars on the invitation itself.",
-                          )}`
+                        ? `${t("Shared with everyone who has access to this mailbox.")} ${
+                              canSave
+                                  ? t(
+                                        "Invitations are saved here and checked for conflicts. You can check more calendars on the invitation itself.",
+                                    )
+                                  : t("You can view this calendar but not save invitations to it.")
+                          }`
                         : t("No calendar is linked to this mailbox.")}
                 </p>
                 {webUrl && (

@@ -355,6 +355,7 @@ class TestCalendarListView:
             )
 
         assert resp.status_code == 200
+        list_calendars.assert_called_once_with()
         assert [(c["name"], c["writable"]) for c in resp.json()["calendars"]] == [
             ("Writable", True),
             ("Shared", False),
@@ -2598,14 +2599,17 @@ END:VCALENDAR""",
         return resp.json()
 
     @staticmethod
-    def _conflicts(api_client, mailbox, start, end, **extra):
+    def _check(api_client, mailbox, start, end, **extra):
         resp = api_client.post(
             f"/api/v1.0/mailboxes/{mailbox.id}/calendar/conflicts/",
             {"start": start.isoformat(), "end": end.isoformat(), **extra},
             format="json",
         )
         assert resp.status_code == 200
-        return resp.json()["conflicts"]
+        return resp.json()
+
+    def _conflicts(self, api_client, mailbox, start, end, **extra):
+        return self._check(api_client, mailbox, start, end, **extra)["conflicts"]
 
     @staticmethod
     def _link(work_url, mailbox):
@@ -2707,6 +2711,66 @@ END:VCALENDAR""",
         assert conflict["calendar_id"] == work_url
         assert conflict["calendar_name"] == "Test Calendar"
         assert conflict["end"] is not None
+
+    def test_reports_the_calendars_checked(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        """A calendar that is gone or fails is not reported as checked, and
+        unchecked calendars are not queried without a UID to look for."""
+        work_url, home_url, start, end = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+        original = CalDAVService._calendar_query
+        queried = []
+
+        def calendar_query(self, calendar_url, *args):
+            queried.append(calendar_url)
+            if calendar_url == home_url:
+                raise CalDAVError("down")
+            return original(self, calendar_url, *args)
+
+        with mock.patch.object(CalDAVService, "_calendar_query", calendar_query):
+            data = self._check(
+                api_client,
+                mailbox,
+                start,
+                end,
+                calendar_ids=[work_url, home_url, "https://gone/"],
+            )
+            assert data["checked_calendar_ids"] == [work_url]
+
+            queried.clear()
+            self._check(api_client, mailbox, start, end, calendar_ids=[work_url])
+            assert queried == [work_url]
+
+    def test_returns_the_occurrence_in_range(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        """A recurring event shows the occurrence that clashes, not its first."""
+        work_url, _, start, end = calendars
+        first = start - timedelta(weeks=3)
+        _put_event(
+            work_url,
+            "weekly",
+            f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:weekly@example.com
+DTSTART:{first.strftime("%Y%m%dT%H%M%SZ")}
+DTEND:{(first + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%SZ")}
+RRULE:FREQ=WEEKLY
+SUMMARY:Weekly sync
+END:VEVENT
+END:VCALENDAR""",
+            auth=(RADICALE_USER, RADICALE_PASSWORD),
+        )
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        conflicts = self._conflicts(
+            api_client, mailbox, start, end, calendar_ids=[work_url]
+        )
+        [weekly] = [c for c in conflicts if c["summary"] == "Weekly sync"]
+        assert datetime.fromisoformat(weekly["start"]) == start.replace(microsecond=0)
 
     @pytest.mark.parametrize(
         "calendar_ids",

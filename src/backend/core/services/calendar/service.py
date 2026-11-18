@@ -437,8 +437,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """Find conflicts and the existing PARTSTAT per identity for the UID.
 
         Returns ``{"conflicts": [...], "existing_partstats": {identity: str},
-        "existing_calendar_ids": [...]}``, the last listing the calendars that
-        already hold a copy of ``exclude_uid``.
+        "existing_calendar_ids": [...], "checked_calendar_ids": [...]}``:
+        the calendars that already hold a copy of ``exclude_uid``, and those
+        that were checked for conflicts without error.
 
         Events whose UID matches ``exclude_uid`` are NOT returned as
         conflicts (a prior import of the same invite should not flag the
@@ -462,7 +463,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         conflicts = []
         existing_partstats = {}
         existing_calendar_ids = []
+        checked_calendar_ids = []
         for cal in self.list_calendars() if calendars is None else calendars:
+            cal_checked = cal.get("check_conflicts", True)
+            if not cal_checked and not exclude_uid:
+                continue
             try:
                 events = self._calendar_query(cal["id"], start, end)
             except CalDAVError:
@@ -470,6 +475,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     "Error searching for conflicts on calendar %s", cal["name"]
                 )
                 continue
+            if cal_checked:
+                checked_calendar_ids.append(cal["id"])
             # The identity a copy in this calendar speaks for: its owner
             # when the server exposes it, otherwise the acting mailbox
             # (servers without owner metadata behave as before).
@@ -480,7 +487,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             owner_lc = (
                 ascii_lower(cal.get("owner_email") or attendee_email or "") or None
             )
-            cal_checked = cal.get("check_conflicts", True)
             for ics_text in events:
                 summary = self._summarize_event(ics_text, cal["name"])
                 if summary is None:
@@ -512,6 +518,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             "conflicts": conflicts,
             "existing_partstats": existing_partstats,
             "existing_calendar_ids": existing_calendar_ids,
+            "checked_calendar_ids": checked_calendar_ids,
         }
 
     @staticmethod
@@ -538,10 +545,14 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         return None
 
     def _calendar_query(self, calendar_url, start, end):
+        # ``expand`` returns the occurrences of a recurring event within the
+        # range, not the series with its first date.
         body = (
             '<?xml version="1.0"?>'
             '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
-            "<d:prop><c:calendar-data/></d:prop>"
+            "<d:prop><c:calendar-data>"
+            f'<c:expand start="{_format_utc(start)}" end="{_format_utc(end)}"/>'
+            "</c:calendar-data></d:prop>"
             "<c:filter>"
             '<c:comp-filter name="VCALENDAR">'
             '<c:comp-filter name="VEVENT">'

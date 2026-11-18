@@ -404,14 +404,14 @@
 }
 
 // The invitation, already saved in this calendar, drawn over the events it
-// clashes with.
+// clashes with; the overlap stripes stay visible on top, under its title.
 .conflict-timeline__bar--saved {
     background-color: var(--bar-color);
     z-index: 1;
 }
 
 .conflict-timeline__bar-text.conflict-timeline__bar-text--saved {
-    z-index: 1;
+    z-index: 3;
     color: white;
     text-shadow: none;
 }
@@ -426,6 +426,7 @@
 }
 
 .conflict-timeline__overlap {
+    z-index: 2;
     opacity: 0.55;
     background: repeating-linear-gradient(
         -45deg,

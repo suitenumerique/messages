@@ -44,8 +44,10 @@ def _calendar_ids_field():
         required=False,
         max_length=500,
         help_text=(
-            "Calendars to check. Default: the mailbox's default calendar "
-            "(one linked to it, else the main calendar)."
+            "Calendars to check; an empty list checks none. Default: the "
+            "mailbox's default calendar (a writable one linked to it, else the "
+            "main calendar), else the first calendar linked to it, else every "
+            "calendar owned by the user or the mailbox, or without a known owner."
         ),
     )
 
@@ -335,6 +337,10 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
                     "existing_calendar_ids": drf_serializers.ListField(
                         child=drf_serializers.CharField(),
                         help_text="Calendars that already hold ``exclude_uid``.",
+                    ),
+                    "checked_calendar_ids": drf_serializers.ListField(
+                        child=drf_serializers.CharField(),
+                        help_text="Calendars that were checked without error.",
                     ),
                     "existing_partstats": drf_serializers.DictField(
                         child=drf_serializers.CharField(),

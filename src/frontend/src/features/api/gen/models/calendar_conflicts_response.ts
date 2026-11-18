@@ -12,6 +12,8 @@ export type CalendarConflictsResponse = {
   conflicts: CalendarConflictsResponseConflictsItem[];
   /** Calendars that already hold ``exclude_uid``. */
   existing_calendar_ids: string[];
+  /** Calendars that were checked without error. */
+  checked_calendar_ids: string[];
   /** PARTSTAT per attendee identity (calendar owner email, lowercased) on the prior copy of ``exclude_uid``. Lets the UI pre-select the right prior RSVP for the *selected* calendar when a mailbox can act through several attendee-owned calendars. */
   existing_partstats: CalendarConflictsResponseExistingPartstats;
 };

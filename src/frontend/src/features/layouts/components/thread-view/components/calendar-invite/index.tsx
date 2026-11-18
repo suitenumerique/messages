@@ -579,10 +579,10 @@ type ConflictsApiResponse = {
         existing_partstats?: Record<string, ExistingPartstat>;
         // Calendars that already hold this invitation.
         existing_calendar_ids?: string[];
+        // Calendars that were checked without error.
+        checked_calendar_ids?: string[];
     };
     status: number;
-    // The calendars this result was checked against.
-    calendarIds: string[];
 };
 
 type RsvpApiResponse = {
@@ -773,7 +773,11 @@ export const CalendarInvite = ({
             ? [...chosenCalendarIds, effectiveCalendarId]
             : chosenCalendarIds;
 
-    const { data: conflictsResponse, isError: isConflictsError } = useQuery<ConflictsApiResponse>({
+    const {
+        data: conflictsResponse,
+        isError: isConflictsError,
+        isPlaceholderData: isConflictsPlaceholder,
+    } = useQuery<ConflictsApiResponse>({
         queryKey: [
             "calendar-conflicts",
             mailboxId,
@@ -782,8 +786,8 @@ export const CalendarInvite = ({
             eventUid,
             conflictCalendarIds.join(","),
         ],
-        queryFn: async () => ({
-            ...(await fetchAPI<Omit<ConflictsApiResponse, "calendarIds">>(
+        queryFn: () =>
+            fetchAPI<ConflictsApiResponse>(
                 `/api/v1.0/mailboxes/${mailboxId}/calendar/conflicts/`,
                 {
                     method: "POST",
@@ -799,9 +803,7 @@ export const CalendarInvite = ({
                         calendar_ids: conflictCalendarIds,
                     }),
                 },
-            )),
-            calendarIds: conflictCalendarIds,
-        }),
+            ),
         enabled: !!mailboxId && allCalendars.length > 0 && !!eventStart && !!eventEnd,
         // Keep the last result while the checked calendars change, so the box
         // doesn't flash "No conflicts" in between.
@@ -832,7 +834,8 @@ export const CalendarInvite = ({
             <ConflictCheck
                 calendars={allCalendars}
                 checkedIds={conflictCalendarIds}
-                fetchedIds={conflictsResponse.calendarIds}
+                fetchedIds={conflictsResponse.data.checked_calendar_ids ?? []}
+                loading={isConflictsPlaceholder}
                 onCheck={setChosenCalendarIds}
                 conflicts={conflicts}
                 event={{

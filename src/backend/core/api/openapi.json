@@ -7855,7 +7855,7 @@
                             "minLength": 1,
                             "maxLength": 2048
                         },
-                        "description": "Calendars to check. Default: the mailbox's default calendar (one linked to it, else the main calendar).",
+                        "description": "Calendars to check; an empty list checks none. Default: the mailbox's default calendar (a writable one linked to it, else the main calendar), else the first calendar linked to it, else every calendar owned by the user or the mailbox, or without a known owner.",
                         "maxItems": 500
                     }
                 },
@@ -7881,6 +7881,13 @@
                         },
                         "description": "Calendars that already hold ``exclude_uid``."
                     },
+                    "checked_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Calendars that were checked without error."
+                    },
                     "existing_partstats": {
                         "type": "object",
                         "additionalProperties": {
@@ -7890,6 +7897,7 @@
                     }
                 },
                 "required": [
+                    "checked_calendar_ids",
                     "conflicts",
                     "existing_calendar_ids",
                     "existing_partstats"

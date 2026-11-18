@@ -68,6 +68,9 @@ export const spanOf = (conflict: ConflictInfo): Span | null => {
     return { start: new Date(conflict.start).getTime(), end: new Date(conflict.end).getTime() };
 };
 
+// All-day events count as starting last, so they are drawn under timed ones.
+const startOf = (conflict: ConflictInfo) => spanOf(conflict)?.start ?? Number.MAX_SAFE_INTEGER;
+
 /**
  * The part of a span that falls within the invitation; all-day on either side
  * (null) means the whole of the other one.
@@ -132,6 +135,7 @@ const ConflictTimeline = ({
     lockedId,
     savedIds,
     fetchedIds,
+    loading,
     language,
     onRemove,
 }: {
@@ -141,6 +145,7 @@ const ConflictTimeline = ({
     lockedId: string | null;
     savedIds: string[];
     fetchedIds: string[];
+    loading: boolean;
     language: string;
     onRemove: (id: string) => void;
 }) => {
@@ -178,11 +183,13 @@ const ConflictTimeline = ({
                 <span />
             </div>
             {calendars.map((calendar) => {
-                const events = conflicts.filter((c) => c.calendar_id === calendar.id);
+                // Events that overlap each other: the one that starts first is drawn on top.
+                const events = conflicts
+                    .filter((c) => c.calendar_id === calendar.id)
+                    .sort((a, b) => startOf(b) - startOf(a));
                 const color = { "--bar-color": calendar.color || DEFAULT_CALENDAR_COLOR } as CSSProperties;
                 const saved = savedIds.includes(calendar.id);
-                // Just added: its result is still on its way.
-                const pending = !fetchedIds.includes(calendar.id);
+                const checked = fetchedIds.includes(calendar.id);
                 return (
                     <div key={calendar.id} className="conflict-timeline__row">
                         <span className="conflict-timeline__label">
@@ -193,8 +200,10 @@ const ConflictTimeline = ({
                         </span>
                         <span className="conflict-timeline__track">
                             <span className="conflict-timeline__window" style={place(event)} />
-                            {events.length === 0 && !saved && !pending && (
-                                <span className="conflict-timeline__free">{t("Free")}</span>
+                            {events.length === 0 && !saved && (checked || !loading) && (
+                                <span className="conflict-timeline__free">
+                                    {checked ? t("Free") : t("Not checked")}
+                                </span>
                             )}
                             {saved && (
                                 <TimelineBar
@@ -249,6 +258,7 @@ export const ConflictCheck = ({
     calendars,
     checkedIds,
     fetchedIds,
+    loading,
     onCheck,
     conflicts,
     event,
@@ -260,6 +270,7 @@ export const ConflictCheck = ({
     calendars: CalendarOption[];
     checkedIds: string[];
     fetchedIds: string[];
+    loading: boolean;
     onCheck: (ids: string[]) => void;
     conflicts: ConflictInfo[];
     event: Invitation;
@@ -272,6 +283,7 @@ export const ConflictCheck = ({
     // A previous result can still hold conflicts of a calendar just removed.
     const shown = conflicts.filter((c) => checkedIds.includes(c.calendar_id));
     const hasConflicts = shown.length > 0;
+    const pending = loading && checkedIds.some((id) => !fetchedIds.includes(id));
 
     return (
         <div
@@ -283,7 +295,9 @@ export const ConflictCheck = ({
                 <span>
                     {hasConflicts
                         ? t("{{count}} conflicting events", { count: shown.length })
-                        : t("No conflicts")}
+                        : pending
+                          ? t("Checking calendars…")
+                          : t("No conflicts")}
                 </span>
             </div>
             <ConflictTimeline
@@ -295,6 +309,7 @@ export const ConflictCheck = ({
                 lockedId={lockedId}
                 savedIds={savedIds}
                 fetchedIds={fetchedIds}
+                loading={loading}
                 language={language}
                 onRemove={(id) => onCheck(checkedIds.filter((checked) => checked !== id))}
             />
