@@ -595,8 +595,9 @@ class Base(Configuration):
     CALENDAR_ITIP_REPLY_ENABLED = values.BooleanValue(
         False, environ_name="CALENDAR_ITIP_REPLY_ENABLED", environ_prefix=None
     )
-    # Also apply unverifiable ("none") REPLYs, flagged unverified; default off
-    # applies only DMARC-verified ones. Only safe where From can't be spoofed.
+    # Also apply the REPLYs whose From address is not proven, and flag them as
+    # unverified. By default, a REPLY needs an aligned From: DMARC passes, or
+    # the From domain signs the message. Only safe where From cannot be forged.
     CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED = values.BooleanValue(
         False,
         environ_name="CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED",

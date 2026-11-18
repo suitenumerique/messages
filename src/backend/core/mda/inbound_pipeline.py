@@ -40,6 +40,7 @@ from core.mda.addresses import normalize_address
 from core.mda.arc import _sealer_trusted, arc_result
 from core.mda.inbound_auth import (
     check_inbound_authentication,
+    from_is_authenticated,
     get_inbound_auth_mode,
     trusted_arc_sealers,
 )
@@ -129,6 +130,11 @@ class InboundContext:  # pylint: disable=too-many-instance-attributes
     mark_trashed: bool = False
     mark_archived: bool = False
     skip_autoreply: bool = False
+
+    # True when the sender-auth checks prove that the From domain sent the
+    # message. Stricter than an absent ``postmark["auth"]``: see
+    # ``from_is_authenticated``.
+    from_authenticated: bool = False
 
     # Populated by ``rspamd_step`` so ``inbound_auth_step`` can reuse
     # the symbols (DKIM/DMARC verdicts) without a second HTTP call.
@@ -395,6 +401,9 @@ def _make_inbound_auth_step(spam_config: Dict[str, Any]) -> Step:
             )
         verdict = check_inbound_authentication(
             ctx.raw_data, ctx.parsed_email, spam_config, ctx.rspamd_result, ctx.arc
+        )
+        ctx.from_authenticated = from_is_authenticated(
+            ctx.parsed_email, spam_config, verdict, ctx.rspamd_result, ctx.arc
         )
         if not verdict:
             # Widget submissions arrive over an unauthenticated web form, so

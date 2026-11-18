@@ -152,7 +152,7 @@ def calendar_apply_reply_task(
         user_email: The organizer mailbox's CalDAV principal email (OIDC
             identity / Basic Auth user for instance config).
         ics_data: Raw REPLY ICS content.
-        attendee_email: The DMARC-verified sender (From) — the only ATTENDEE
+        attendee_email: The authenticated sender (From) — the only ATTENDEE
             ``apply_reply`` may modify.
         organizer_email: The recipient mailbox address; only a stored copy whose
             ORGANIZER matches it is updated.
