@@ -498,7 +498,7 @@
         "/api/v1.0/contacts/": {
             "get": {
                 "operationId": "contacts_list",
-                "description": "List contacts with optional filtering by mailbox and search query.\nFor a mailbox, it returns all contacts in the mailbox and all contacts\nin the same domain as the mailbox.\n\nQuery parameters:\n- mailbox_id: Optional UUID to filter contacts by mailbox\n- q: Optional search query for name or email (case insensitive)",
+                "description": "List contacts with optional filtering by mailbox and search query.\nFor a mailbox, it returns the contacts the mailbox sent a message to\nand all contacts in the same domain as the mailbox. Contacts removed\nfrom the suggestions are left out.\n\nQuery parameters:\n- mailbox_id: Optional UUID to filter contacts by mailbox\n- q: Optional search query for name or email (case insensitive)",
                 "parameters": [
                     {
                         "in": "query",
@@ -533,7 +533,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/Contact"
+                                        "$ref": "#/components/schemas/ContactSuggestion"
                                     }
                                 }
                             }
@@ -575,6 +575,33 @@
                             }
                         },
                         "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "contacts_destroy",
+                "description": "Remove a contact from the recipient suggestions of its mailbox.\n\nThe contact itself is kept, as the messages it sent or received still\nreference it. It is suggested again once a message is sent to it.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "contacts"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
                     }
                 }
             }
@@ -8243,6 +8270,37 @@
                     }
                 },
                 "required": [
+                    "email",
+                    "id"
+                ]
+            },
+            "ContactSuggestion": {
+                "type": "object",
+                "description": "Serialize a contact offered as a recipient suggestion.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 255
+                    },
+                    "email": {
+                        "type": "string",
+                        "maxLength": 254
+                    },
+                    "can_hide": {
+                        "type": "boolean",
+                        "description": "Tell whether the current user can remove this contact from suggestions.",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "can_hide",
                     "email",
                     "id"
                 ]

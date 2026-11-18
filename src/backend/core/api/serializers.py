@@ -890,6 +890,19 @@ class ContactSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "email"]
 
 
+class ContactSuggestionSerializer(ContactSerializer):
+    """Serialize a contact offered as a recipient suggestion."""
+
+    can_hide = serializers.SerializerMethodField()
+
+    def get_can_hide(self, obj) -> bool:
+        """Tell whether the current user can remove this contact from suggestions."""
+        return obj.mailbox_id in self.context["hideable_mailbox_ids"]
+
+    class Meta(ContactSerializer.Meta):
+        fields = [*ContactSerializer.Meta.fields, "can_hide"]
+
+
 class BlobSerializer(serializers.ModelSerializer):
     """Serialize blobs."""
 

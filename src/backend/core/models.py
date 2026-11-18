@@ -2214,6 +2214,12 @@ class Contact(BaseModel):
         on_delete=models.CASCADE,
         related_name="contacts",
     )
+    # Deleting a row would cascade to the messages it sent or received, so a
+    # contact the user no longer wants suggested is flagged instead. Being
+    # suggested also requires the mailbox to have written to it.
+    # db_default keeps inserts from the code still running during the
+    # migration valid.
+    is_suggested = models.BooleanField("is suggested", default=True, db_default=True)
 
     class Meta:
         db_table = "messages_contact"

@@ -30,6 +30,11 @@ export type ComboBoxProps =  {
      */
     getItemWarning?: (value: string) => string | undefined,
     /**
+     * Lets the user discard a menu option through a button on the option.
+     * Return nothing for options that cannot be discarded.
+     */
+    getOptionRemoval?: (option: Option) => { label: string, onRemove: () => void } | undefined,
+    /**
      * "floating" (default) animates the label above the value, like the
      * ui-kit Select. "inline" puts the label in a left column and the field
      * in a right column, on the same grid as the ui-kit inline fields.
@@ -51,7 +56,7 @@ export const ComboBox = (props: ComboBoxProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     // `className` is merged into the root classes below instead of being
     // spread, otherwise a caller-provided value would replace `c__combobox`.
-    const { valueTransformer, getItemWarning, className, variant = "floating", actions, ...fieldProps } = props;
+    const { valueTransformer, getItemWarning, getOptionRemoval, className, variant = "floating", actions, ...fieldProps } = props;
     const inline = variant === "inline";
     const canonical = useCallback(
         (value: string): string => (valueTransformer ? valueTransformer(value) : value),
@@ -327,18 +332,38 @@ export const ComboBox = (props: ComboBoxProps) => {
                     maxHeight={MENU_MAX_HEIGHT}
                 >
                     <ul className="c__combobox__menu" {...getMenuProps({}, { suppressRefError: true })}>
-                        {filteredOptions.map((item, index) => (
-                            <li
-                                className={clsx("c__combobox__menu__item", {
-                                    "c__combobox__menu__item--highlight": highlightedIndex === index,
-                                    "c__combobox__menu__item--selected": selectedItem === item,
-                                })}
-                                key={item.value}
-                                {...getItemProps({item, index})}
-                            >
-                                {item.render?.() || <span>{item.label}</span>}
-                            </li>
-                        ))}
+                        {filteredOptions.map((item, index) => {
+                            const removal = getOptionRemoval?.(item);
+                            return (
+                                <li
+                                    className={clsx("c__combobox__menu__item", {
+                                        "c__combobox__menu__item--highlight": highlightedIndex === index,
+                                        "c__combobox__menu__item--selected": selectedItem === item,
+                                    })}
+                                    key={item.value}
+                                    {...getItemProps({item, index})}
+                                >
+                                    {item.render?.() || <span>{item.label}</span>}
+                                    {removal && (
+                                        <Button
+                                            variant="tertiary"
+                                            size="nano"
+                                            type="button"
+                                            tabIndex={-1}
+                                            className="c__combobox__menu__item__remove"
+                                            aria-label={removal.label}
+                                            title={removal.label}
+                                            icon={<Icon name="close" />}
+                                            onClick={(e) => {
+                                                // Would otherwise pick the option being removed.
+                                                e.stopPropagation();
+                                                removal.onRemove();
+                                            }}
+                                        />
+                                    )}
+                                </li>
+                            );
+                        })}
                     </ul>
                 </Popover>
             </div>

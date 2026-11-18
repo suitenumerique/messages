@@ -89,3 +89,82 @@ describe("ComboBox chip warnings", () => {
         expect(container.querySelector(".c__combobox__chip--warning")).toBeNull();
     });
 });
+
+describe("ComboBox option removal", () => {
+    const REMOVABLE = "removable@example.com";
+    const OTHER = "other@example.com";
+    const REMOVE_SELECTOR = ".c__combobox__menu__item__remove";
+
+    const renderOpened = async () => {
+        const onRemove = vi.fn();
+        const onChange = vi.fn();
+        const container = document.createElement("div");
+        document.body.appendChild(container);
+        await act(async () => {
+            createRoot(container).render(
+                <CunninghamProvider>
+                    <ComboBox
+                        label="To"
+                        options={[
+                            { label: REMOVABLE, value: REMOVABLE },
+                            { label: OTHER, value: OTHER },
+                        ]}
+                        onChange={onChange}
+                        getOptionRemoval={(option) =>
+                            option.value === REMOVABLE ? { label: "Remove", onRemove } : undefined
+                        }
+                    />
+                </CunninghamProvider>
+            );
+        });
+        const input = container.querySelector<HTMLInputElement>("input:not([type=hidden])")!;
+        await act(async () => {
+            input.focus();
+        });
+        await pressKey(input, { key: "ArrowDown" });
+        return { input, onRemove, onChange };
+    };
+
+    const pressKey = async (input: HTMLInputElement, init: KeyboardEventInit) => {
+        await act(async () => {
+            input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+        });
+    };
+
+    it("only offers the removal on the options that allow it", async () => {
+        await renderOpened();
+
+        const items = document.querySelectorAll(".c__combobox__menu__item");
+        expect(items).toHaveLength(2);
+        expect(items[0].querySelector(REMOVE_SELECTOR)?.getAttribute("aria-label")).toBe("Remove");
+        expect(items[1].querySelector(REMOVE_SELECTOR)).toBeNull();
+    });
+
+    it("removes the option without picking it when clicking its button", async () => {
+        const { onRemove, onChange } = await renderOpened();
+        onChange.mockClear();
+
+        await act(async () => {
+            document.querySelector<HTMLButtonElement>(REMOVE_SELECTOR)!.click();
+        });
+
+        expect(onRemove).toHaveBeenCalledTimes(1);
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("never removes an option from the keyboard", async () => {
+        // A stray key press must not lose a suggestion: only the button does.
+        const { input, onRemove } = await renderOpened();
+
+        for (const init of [
+            { key: "Delete" },
+            { key: "Delete", shiftKey: true },
+            { key: "Backspace" },
+            { key: "Backspace", shiftKey: true },
+        ]) {
+            await pressKey(input, init);
+        }
+
+        expect(onRemove).not.toHaveBeenCalled();
+    });
+});
