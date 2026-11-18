@@ -10,6 +10,7 @@ and this project adheres to
 
 ### Added
 
+- Show invitation conflicts on a timeline, in the calendars you choose
 - Support passkey sign-in in the `lst-dsfr` Keycloak theme (off by default)
 - Add the `lst-dsfr` login and account theme (Keycloakify, react-dsfr) with
   the ProConnect look. The dev realm keeps the built-in themes.

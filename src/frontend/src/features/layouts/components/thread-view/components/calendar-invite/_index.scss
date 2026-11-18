@@ -302,46 +302,192 @@
     font-size: var(--c--globals--font--sizes--sm);
 }
 
+.calendar-invite__conflicts--none {
+    background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
 .calendar-invite__conflicts-header {
     display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--sm);
     font-weight: 500;
-    margin-bottom: var(--c--globals--spacings--2xs);
 
     .material-icon {
         font-size: 18px;
     }
 }
 
-.calendar-invite__conflicts-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    padding-left: calc(18px + var(--c--globals--spacings--sm));
+// Invitation and conflicts as bars on a shared time axis:
+// label | track | remove.
+.conflict-timeline {
+    --label-width: 25%;
+    --remove-width: 24px;
+    margin-top: var(--c--globals--spacings--xs);
+    color: var(--c--contextuals--content--semantic--neutral--primary);
 }
 
-.calendar-invite__conflict-item {
-    display: flex;
-    justify-content: space-between;
+.conflict-timeline__axis {
+    position: relative;
+    height: 1.4em;
+    margin: 0 var(--remove-width) 0 var(--label-width);
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+    span {
+        position: absolute;
+        transform: translateX(-50%);
+        white-space: nowrap;
+    }
+
+    span:first-child {
+        transform: none;
+    }
+
+    span:last-child {
+        transform: translateX(-100%);
+    }
+}
+
+.conflict-timeline__row {
+    display: grid;
+    grid-template-columns: var(--label-width) 1fr var(--remove-width);
     align-items: center;
-    gap: var(--c--globals--spacings--sm);
     padding: var(--c--globals--spacings--3xs) 0;
 }
 
-.calendar-invite__conflict-summary {
+.conflict-timeline__label {
+    min-width: 0;
+    padding-right: var(--c--globals--spacings--xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-weight: 500;
 }
 
-.calendar-invite__conflict-calendar {
-    font-size: var(--c--globals--font--sizes--xs);
-    opacity: 0.8;
+.conflict-timeline__calendar {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs);
+    min-width: 0;
 }
 
-.calendar-invite__conflict-time {
-    color: var(--c--contextuals--content--semantic--warning--primary);
+.conflict-timeline__calendar-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conflict-timeline__track {
+    position: relative;
+    height: 20px;
+    border-radius: 3px;
+    background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
+}
+
+// Conflicts: the event in its calendar's colour, light, with its title on it;
+// the part that clashes with the invitation striped red. The invitation's own
+// slot is shaded on every row, and drawn solid on its own row.
+.conflict-timeline__bar,
+.conflict-timeline__window,
+.conflict-timeline__overlap,
+.conflict-timeline__bar-text {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 3px;
+    border-radius: 3px;
+}
+
+.conflict-timeline__bar {
+    background-color: color-mix(in srgb, var(--bar-color) 35%, white);
+}
+
+// The invitation, already saved in this calendar, drawn over the events it
+// clashes with.
+.conflict-timeline__bar--saved {
+    background-color: var(--bar-color);
+    z-index: 1;
+}
+
+.conflict-timeline__bar-text.conflict-timeline__bar-text--saved {
+    z-index: 1;
+    color: white;
+    text-shadow: none;
+}
+
+.conflict-timeline__window {
+    top: -4px;
+    bottom: -4px;
+    border-left: 1px dashed var(--c--contextuals--content--semantic--brand--primary);
+    border-right: 1px dashed var(--c--contextuals--content--semantic--brand--primary);
+    border-radius: 0;
+    background-color: color-mix(in srgb, var(--c--contextuals--content--semantic--brand--primary) 8%, transparent);
+}
+
+.conflict-timeline__overlap {
+    opacity: 0.55;
+    background: repeating-linear-gradient(
+        -45deg,
+        var(--c--contextuals--content--semantic--error--primary) 0 4px,
+        transparent 4px 8px
+    );
+}
+
+.conflict-timeline__bar-text,
+.conflict-timeline__free {
+    padding: 0 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: var(--c--globals--font--sizes--xs);
-    flex-shrink: 0;
+    line-height: 20px;
+}
+
+.conflict-timeline__bar-text {
+    font-weight: 500;
+    text-shadow: 0 0 2px white, 0 0 2px white;
+}
+
+.conflict-timeline__free {
+    position: absolute;
+    left: 0;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
+.conflict-timeline__row--invitation {
+    .conflict-timeline__label {
+        color: var(--c--contextuals--content--semantic--brand--primary);
+    }
+
+    .conflict-timeline__bar {
+        background-color: var(--c--contextuals--content--semantic--brand--primary);
+    }
+
+    .conflict-timeline__bar-text {
+        color: white;
+        text-shadow: none;
+    }
+}
+
+.conflict-timeline__remove.c__button {
+    justify-self: end;
+    width: 20px;
+    height: 20px;
+    min-height: 0;
+    padding: 0;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+    .material-icon {
+        font-size: 14px;
+    }
+}
+
+// One type size for names and times, a smaller one for the axis and bar
+// titles; digits of equal width so times line up.
+.conflict-timeline {
+    font-size: var(--c--globals--font--sizes--sm);
+    font-variant-numeric: tabular-nums;
 }
 
 .calendar-invite__rsvp-buttons {
@@ -507,15 +653,28 @@
         padding-inline: var(--c--globals--spacings--2xs);
     }
 
-    .calendar-invite__conflict-item {
-        flex-wrap: wrap;
-        justify-content: flex-start;
-        row-gap: 0;
-        column-gap: var(--c--globals--spacings--xs);
+    // Name on one line, the track full width underneath.
+    .conflict-timeline__axis {
+        margin: 0;
     }
 
-    .calendar-invite__conflict-summary {
-        flex-basis: 100%;
+    .conflict-timeline__row {
+        grid-template-columns: 1fr var(--remove-width);
+        grid-template-areas: "label remove" "track track";
+        row-gap: var(--c--globals--spacings--3xs);
+    }
+
+    .conflict-timeline__label {
+        grid-area: label;
+    }
+
+    .conflict-timeline__track {
+        grid-area: track;
+    }
+
+    .conflict-timeline__remove.c__button {
+        grid-area: remove;
+        align-self: start;
     }
 
     .calendar-invite__calendar-chooser {
@@ -538,5 +697,16 @@
         .c__button__icon {
             display: none;
         }
+    }
+}
+
+.calendar-invite__conflicts-hint {
+    margin: var(--c--globals--spacings--xs) 0 0;
+    font-size: var(--c--globals--font--sizes--xs);
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+
+    a {
+        color: inherit;
+        text-decoration: underline;
     }
 }

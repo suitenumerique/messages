@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 
 from core import enums, models
 from core.api.permissions import HasAccessToMailbox, HasWriteAccessToMailbox
+from core.mda.addresses import ascii_lower
 from core.services.calendar.service import CalDAVError, CalDAVService
 from core.services.calendar.tasks import calendar_add_event_task, calendar_rsvp_task
 from core.utils import register_task_owner
@@ -34,6 +35,19 @@ _ERROR_SCHEMA = {
     "type": "object",
     "properties": {"detail": {"type": "string"}},
 }
+
+
+def _calendar_ids_field():
+    """The ``calendar_ids`` of a conflict check, for its schema and validation."""
+    return drf_serializers.ListField(
+        child=drf_serializers.CharField(max_length=2048),
+        required=False,
+        max_length=500,
+        help_text=(
+            "Calendars to check. Default: the mailbox's default calendar "
+            "(one linked to it, else the main calendar)."
+        ),
+    )
 
 
 class CalDAVChannelMixin:
@@ -83,6 +97,36 @@ class CalDAVChannelMixin:
         if not service:
             raise NotFound("No CalDAV calendar is configured for this mailbox.")
         return service
+
+    def is_linked(self, calendar):
+        """Whether ``calendar`` is linked to this mailbox's address."""
+        return calendar.get("owner_type") == "MAILBOX" and ascii_lower(
+            calendar.get("owner_email") or ""
+        ) == ascii_lower(str(self.mailbox))
+
+    def default_calendar_id(self, service, calendars):
+        """Where new events go by default: a writable calendar linked to this
+        mailbox, else the main calendar."""
+        writable = [cal for cal in calendars if cal["writable"]]
+        if linked := [cal["id"] for cal in writable if self.is_linked(cal)]:
+            return linked[0]
+        main = service.main_calendar_id
+        return main if main in {cal["id"] for cal in writable} else None
+
+    def default_conflict_calendar_ids(self, service, calendars, default_id):
+        """Calendars checked for conflicts unless the user adds others: the
+        default calendar (one linked to this mailbox, else the main one), else
+        every calendar owned by the user or mailbox."""
+        if default_id:
+            return [default_id]
+        if linked := [cal["id"] for cal in calendars if self.is_linked(cal)]:
+            return linked[:1]
+        own = {ascii_lower(service.username), ascii_lower(str(self.mailbox))}
+        return [
+            cal["id"]
+            for cal in calendars
+            if not cal.get("owner_email") or ascii_lower(cal["owner_email"]) in own
+        ]
 
 
 @extend_schema(tags=["calendar"])
@@ -278,6 +322,7 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
                         "(avoids flagging prior imports of the same invite)."
                     ),
                 ),
+                "calendar_ids": _calendar_ids_field(),
             },
         ),
         responses={
@@ -286,6 +331,10 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
                 fields={
                     "conflicts": drf_serializers.ListField(
                         child=drf_serializers.DictField()
+                    ),
+                    "existing_calendar_ids": drf_serializers.ListField(
+                        child=drf_serializers.CharField(),
+                        help_text="Calendars that already hold ``exclude_uid``.",
                     ),
                     "existing_partstats": drf_serializers.DictField(
                         child=drf_serializers.CharField(),
@@ -315,12 +364,22 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
         start = request.data.get("start")
         end = request.data.get("end")
         exclude_uid = request.data.get("exclude_uid") or None
+        calendar_ids = request.data.get("calendar_ids")
 
         if not start or not end:
             return Response(
                 {"detail": "start and end are required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if calendar_ids is not None:
+            try:
+                calendar_ids = _calendar_ids_field().run_validation(calendar_ids)
+            except drf_serializers.ValidationError:
+                return Response(
+                    {"detail": "calendar_ids must be a list of at most 500 ids."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         try:
             if isinstance(start, str):
@@ -351,11 +410,20 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
         service = self.require_caldav_service()
 
         try:
+            calendars = service.list_calendars()
+            if calendar_ids is None:
+                calendar_ids = self.default_conflict_calendar_ids(
+                    service, calendars, self.default_calendar_id(service, calendars)
+                )
             result = service.check_conflicts(
                 start=start,
                 end=end,
                 exclude_uid=exclude_uid,
                 attendee_email=str(self.mailbox),
+                calendars=[
+                    {**cal, "check_conflicts": cal["id"] in calendar_ids}
+                    for cal in calendars
+                ],
             )
         except CalDAVError as e:
             # Upstream CalDAV failure (network, 4xx/5xx from server,
@@ -388,7 +456,21 @@ class CalendarListView(CalDAVChannelMixin, APIView):
                 name="CalendarListResponse",
                 fields={
                     "calendars": drf_serializers.ListField(
-                        child=drf_serializers.DictField()
+                        child=drf_serializers.DictField(),
+                        help_text=(
+                            "Every calendar, with booleans ``writable`` and "
+                            "``linked`` (linked to this mailbox)."
+                        ),
+                    ),
+                    "default_calendar_id": drf_serializers.CharField(
+                        required=False,
+                        allow_null=True,
+                        help_text="Calendar new events go to by default.",
+                    ),
+                    "default_conflict_calendar_ids": drf_serializers.ListField(
+                        child=drf_serializers.CharField(),
+                        required=False,
+                        help_text="Calendars checked for conflicts by default.",
                     ),
                     "web_url": drf_serializers.CharField(
                         allow_null=True,
@@ -428,10 +510,12 @@ class CalendarListView(CalDAVChannelMixin, APIView):
             )
 
         try:
-            # Only list calendars the user can write to — the UI uses this
-            # to pick a destination for RSVP/add-event, and read-only
-            # calendars would fail at PUT time.
-            calendars = service.list_calendars(writable_only=True)
+            # Every calendar, for the conflict check; RSVP/add-event can only
+            # use the writable ones.
+            calendars = [
+                {**cal, "linked": self.is_linked(cal)}
+                for cal in service.list_calendars()
+            ]
         except CalDAVError as e:
             # 403 on the *instance-level* path means "we authenticated the
             # service credential but this OIDC identity is not yet a
@@ -483,7 +567,16 @@ class CalendarListView(CalDAVChannelMixin, APIView):
             )
         # Anything else is unexpected — let Django return 500.
 
+        default_id = self.default_calendar_id(service, calendars)
         return Response(
-            {"calendars": calendars, "web_url": web_url, "configured": True},
+            {
+                "calendars": calendars,
+                "default_calendar_id": default_id,
+                "default_conflict_calendar_ids": self.default_conflict_calendar_ids(
+                    service, calendars, default_id
+                ),
+                "web_url": web_url,
+                "configured": True,
+            },
             status=status.HTTP_200_OK,
         )

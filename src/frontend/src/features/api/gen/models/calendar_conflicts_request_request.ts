@@ -16,4 +16,9 @@ export type CalendarConflictsRequestRequest = {
    * @nullable
    */
   exclude_uid?: string | null;
+  /**
+   * Calendars to check. Default: the mailbox's default calendar (one linked to it, else the main calendar).
+   * @maxItems 500
+   */
+  calendar_ids?: string[];
 };

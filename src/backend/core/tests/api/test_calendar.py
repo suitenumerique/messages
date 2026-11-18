@@ -327,32 +327,38 @@ class TestCalendarListView:
         assert resp.status_code == 200
         assert resp.json()["calendars"] == []
 
-    def test_list_calendars_requests_writable_only(
+    def test_list_calendars_flags_read_only(
         self,
         api_client,
         mailbox,
         caldav_channel,
         user_with_mailbox,
     ):
-        """The endpoint must ask the service for writable calendars only,
-        so read-only shares never reach the UI dropdown."""
+        """Read-only shares are listed (for the conflict check) but flagged,
+        so the UI keeps them out of the save dropdown."""
         api_client.force_authenticate(user=user_with_mailbox)
         with mock.patch.object(CalDAVService, "list_calendars") as list_calendars:
             list_calendars.return_value = [
                 {
                     "id": "https://caldav.example.com/rw/",
                     "name": "Writable",
-                    "color": None,
-                }
+                    "writable": True,
+                },
+                {
+                    "id": "https://caldav.example.com/ro/",
+                    "name": "Shared",
+                    "writable": False,
+                },
             ]
             resp = api_client.get(
                 f"/api/v1.0/mailboxes/{mailbox.id}/calendar/calendars/"
             )
 
         assert resp.status_code == 200
-        list_calendars.assert_called_once_with(writable_only=True)
-        names = [c["name"] for c in resp.json()["calendars"]]
-        assert names == ["Writable"]
+        assert [(c["name"], c["writable"]) for c in resp.json()["calendars"]] == [
+            ("Writable", True),
+            ("Shared", False),
+        ]
 
     def test_list_calendars_403_instance_config_is_empty_list(
         self,
@@ -482,7 +488,7 @@ END:VCALENDAR""",
         radicale_with_calendar,
     ):
         """exclude_uid filters out prior imports of the same event."""
-        _, put_event = radicale_with_calendar
+        calendar_url, put_event = radicale_with_calendar
         now = datetime.now(tz=timezone.utc)
         event_start = now + timedelta(hours=3)
         event_end = event_start + timedelta(hours=1)
@@ -514,6 +520,7 @@ END:VCALENDAR""",
         assert resp.status_code == 200
         conflicts = resp.json()["conflicts"]
         assert not any(c.get("uid") == shared_uid for c in conflicts)
+        assert resp.json()["existing_calendar_ids"] == [calendar_url]
 
     def test_check_conflicts_missing_fields(
         self,
@@ -2550,3 +2557,210 @@ def test_instance_config_sends_oidc_email_as_basic_auth_user(settings):
     assert service.username == oidc_email
     assert service.password == "shared-secret-xyz"
     assert service.session.auth == (oidc_email, "shared-secret-xyz")
+
+
+# ---------------------------------------------------------------------------
+# Calendars checked for conflicts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db()
+class TestConflictCalendars:
+    """Which calendars are offered, preselected and checked for conflicts."""
+
+    @pytest.fixture()
+    def calendars(self, radicale_server, radicale_with_calendar):
+        """Two calendars; the first holds an event an hour from now."""
+        work_url, put_event = radicale_with_calendar
+        home_url = f"{radicale_server}/{RADICALE_USER}/home-cal/"
+        _mkcalendar(home_url, "Home", auth=(RADICALE_USER, RADICALE_PASSWORD))
+        start = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        put_event(
+            "busy",
+            f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:busy@example.com
+DTSTART:{start.strftime("%Y%m%dT%H%M%SZ")}
+DTEND:{end.strftime("%Y%m%dT%H%M%SZ")}
+SUMMARY:Busy
+END:VEVENT
+END:VCALENDAR""",
+        )
+        return work_url, home_url, start, end
+
+    @staticmethod
+    def _list(api_client, mailbox):
+        resp = api_client.get(f"/api/v1.0/mailboxes/{mailbox.id}/calendar/calendars/")
+        assert resp.status_code == 200
+        return resp.json()
+
+    @staticmethod
+    def _conflicts(api_client, mailbox, start, end, **extra):
+        resp = api_client.post(
+            f"/api/v1.0/mailboxes/{mailbox.id}/calendar/conflicts/",
+            {"start": start.isoformat(), "end": end.isoformat(), **extra},
+            format="json",
+        )
+        assert resp.status_code == 200
+        return resp.json()["conflicts"]
+
+    @staticmethod
+    def _link(work_url, mailbox):
+        """Patch ``list_calendars`` so the work calendar is linked to ``mailbox``."""
+        original = CalDAVService.list_calendars
+
+        def list_calendars(self, writable_only=False):
+            cals = original(self, writable_only=writable_only)
+            for cal in cals:
+                if cal["id"] == work_url:
+                    cal.update(owner_email=str(mailbox).upper(), owner_type="MAILBOX")
+            return cals
+
+        return mock.patch.object(CalDAVService, "list_calendars", list_calendars)
+
+    def test_defaults_without_main_calendar(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        """Servers without a main calendar: every owned calendar is checked."""
+        work_url, home_url, start, end = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        data = self._list(api_client, mailbox)
+        assert {(c["id"], c["writable"], c["linked"]) for c in data["calendars"]} == {
+            (work_url, True, False),
+            (home_url, True, False),
+        }
+        assert data["default_calendar_id"] is None
+        assert set(data["default_conflict_calendar_ids"]) == {work_url, home_url}
+        assert len(self._conflicts(api_client, mailbox, start, end)) == 1
+
+    def test_main_calendar_is_the_default(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        _, home_url, start, end = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        with mock.patch.object(CalDAVService, "main_calendar_id", home_url):
+            data = self._list(api_client, mailbox)
+            assert data["default_calendar_id"] == home_url
+            assert data["default_conflict_calendar_ids"] == [home_url]
+            assert self._conflicts(api_client, mailbox, start, end) == []
+
+    def test_linked_calendar_is_the_default(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        work_url, home_url, start, end = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        with (
+            mock.patch.object(CalDAVService, "main_calendar_id", home_url),
+            self._link(work_url, mailbox),
+        ):
+            data = self._list(api_client, mailbox)
+            assert {c["id"]: c["linked"] for c in data["calendars"]} == {
+                work_url: True,
+                home_url: False,
+            }
+            assert data["default_calendar_id"] == work_url
+            assert data["default_conflict_calendar_ids"] == [work_url]
+            assert len(self._conflicts(api_client, mailbox, start, end)) == 1
+
+    def test_only_the_default_of_several_linked_calendars_is_checked(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        work_url, home_url, _, _ = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+        original = CalDAVService.list_calendars
+
+        def list_calendars(self, writable_only=False):
+            return [
+                {**cal, "owner_email": str(mailbox), "owner_type": "MAILBOX"}
+                for cal in original(self, writable_only=writable_only)
+            ]
+
+        with mock.patch.object(CalDAVService, "list_calendars", list_calendars):
+            data = self._list(api_client, mailbox)
+            assert all(c["linked"] for c in data["calendars"])
+            assert data["default_conflict_calendar_ids"] == [
+                data["default_calendar_id"]
+            ]
+            assert data["default_calendar_id"] in {work_url, home_url}
+
+    def test_checks_the_chosen_calendars(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendars
+    ):
+        work_url, home_url, start, end = calendars
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        assert self._conflicts(api_client, mailbox, start, end, calendar_ids=[]) == []
+        assert (
+            self._conflicts(api_client, mailbox, start, end, calendar_ids=[home_url])
+            == []
+        )
+        [conflict] = self._conflicts(
+            api_client, mailbox, start, end, calendar_ids=[work_url, home_url]
+        )
+        assert conflict["summary"] == "Busy"
+        assert conflict["calendar_id"] == work_url
+        assert conflict["calendar_name"] == "Test Calendar"
+        assert conflict["end"] is not None
+
+    @pytest.mark.parametrize(
+        "calendar_ids",
+        ["nope", [""], ["x" * 2049], ["https://x/cal/"] * 501],
+    )
+    def test_rejects_invalid_calendar_ids(
+        self, api_client, mailbox, caldav_channel, user_with_mailbox, calendar_ids
+    ):
+        api_client.force_authenticate(user=user_with_mailbox)
+        now = datetime.now(tz=timezone.utc)
+        resp = api_client.post(
+            f"/api/v1.0/mailboxes/{mailbox.id}/calendar/conflicts/",
+            {
+                "start": now.isoformat(),
+                "end": (now + timedelta(hours=1)).isoformat(),
+                "calendar_ids": calendar_ids,
+            },
+            format="json",
+        )
+        assert resp.status_code == 400
+
+
+class TestMainCalendarId:
+    """The main calendar is the principal's schedule-default-calendar-URL."""
+
+    @staticmethod
+    def _propfind(principal_props):
+        responses = iter(
+            [
+                '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/</d:href>'
+                "<d:propstat><d:prop><d:current-user-principal>"
+                "<d:href>/dav/principals/me/</d:href></d:current-user-principal>"
+                "</d:prop></d:propstat></d:response></d:multistatus>",
+                '<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+                "<d:response><d:href>/dav/principals/me/</d:href><d:propstat><d:prop>"
+                "<c:calendar-home-set><d:href>/dav/home/</d:href></c:calendar-home-set>"
+                f"{principal_props}</d:prop></d:propstat></d:response></d:multistatus>",
+            ]
+        )
+        return lambda *args, **kwargs: mock.Mock(text=next(responses))
+
+    def test_read_during_discovery(self):
+        service = CalDAVService(url="https://caldav.example.com/dav/")
+        props = (
+            "<c:schedule-default-calendar-URL><d:href>/dav/home/main/</d:href>"
+            "</c:schedule-default-calendar-URL>"
+        )
+        with mock.patch.object(CalDAVService, "_propfind", self._propfind(props)):
+            assert (
+                service.main_calendar_id == "https://caldav.example.com/dav/home/main/"
+            )
+            assert service.home_set == "https://caldav.example.com/dav/home/"
+
+    def test_none_when_server_has_none(self):
+        service = CalDAVService(url="https://caldav.example.com/dav/")
+        with mock.patch.object(CalDAVService, "_propfind", self._propfind("")):
+            assert service.main_calendar_id is None

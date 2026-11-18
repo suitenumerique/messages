@@ -71,6 +71,26 @@
     color: var(--c--contextuals--content--semantic--neutral--secondary);
   }
 
+  &__calendar-link {
+    margin-top: var(--c--globals--spacings--sm);
+  }
+
+  // A calendar as Calendars shows it: colour box and name.
+  &__calendar {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs);
+    margin-top: var(--c--globals--spacings--2xs);
+    font-weight: 500;
+  }
+
+  &__calendar-color {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+  }
+
   &__section-count {
     font-size: var(--c--globals--font--sizes--sm);
     color: var(--c--contextuals--content--semantic--neutral--secondary);

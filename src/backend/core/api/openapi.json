@@ -7847,6 +7847,16 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Optional UID of an event to exclude from conflicts (avoids flagging prior imports of the same invite)."
+                    },
+                    "calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048
+                        },
+                        "description": "Calendars to check. Default: the mailbox's default calendar (one linked to it, else the main calendar).",
+                        "maxItems": 500
                     }
                 },
                 "required": [
@@ -7864,6 +7874,13 @@
                             "additionalProperties": {}
                         }
                     },
+                    "existing_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Calendars that already hold ``exclude_uid``."
+                    },
                     "existing_partstats": {
                         "type": "object",
                         "additionalProperties": {
@@ -7874,6 +7891,7 @@
                 },
                 "required": [
                     "conflicts",
+                    "existing_calendar_ids",
                     "existing_partstats"
                 ]
             },
@@ -7885,7 +7903,20 @@
                         "items": {
                             "type": "object",
                             "additionalProperties": {}
-                        }
+                        },
+                        "description": "Every calendar, with booleans ``writable`` and ``linked`` (linked to this mailbox)."
+                    },
+                    "default_calendar_id": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Calendar new events go to by default."
+                    },
+                    "default_conflict_calendar_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Calendars checked for conflicts by default."
                     },
                     "web_url": {
                         "type": "string",

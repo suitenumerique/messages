@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import {
@@ -16,6 +16,7 @@ import { AttachmentHelper } from "@/features/utils/attachment-helper";
 import { isNativePlatform } from "@/features/native/platform";
 import { useNativeDownload } from "@/features/native/use-native-download";
 import MailHelper from "@/features/utils/mail-helper";
+import { useMailboxContext } from "@/features/providers/mailbox";
 import { ContactChip } from "@/features/ui/components/contact-chip";
 import { Badge } from "@/features/ui/components/badge";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -29,9 +30,12 @@ import {
     getAttendeeStatusInfo,
     createContactFromAttendee,
     collapseRecurringEvents,
+    isAllDayEvent,
 } from "./calendar-helper";
 import { cleanEventForDisplay } from "./event-display";
 import { CalendarSelect } from "./calendar-select";
+import { CalendarInfo, useMailboxCalendars } from "./calendars";
+import { ConflictCheck, ConflictInfo, useConflictCalendarIds } from "./conflict-check";
 
 type CalendarInviteProps = {
     attachment: Attachment;
@@ -43,38 +47,6 @@ type CalendarInviteProps = {
     // the fallback RSVP identity (keying the prior PARTSTAT) when the
     // CalDAV server doesn't expose a calendar's ``owner_email``.
     mailboxEmail?: string;
-};
-
-type CalendarInfo = {
-    id: string;
-    name: string;
-    color?: string | null;
-    // User-controlled sort order from Apple's ``calendar-order`` property —
-    // the backend already sorts the list, so this is informational only.
-    // Null when the CalDAV server doesn't expose it.
-    order?: number | null;
-    // Email of the principal that owns this calendar (the OIDC user for a
-    // personal calendar, the shared mailbox address for a MAILBOX calendar).
-    // Used to match the calendar against the event's ATTENDEE list so RSVP
-    // buttons are only shown for a calendar that can credibly speak for an
-    // attendee. Null when the CalDAV server doesn't expose it.
-    owner_email?: string | null;
-    // "USER" or "MAILBOX" — matches suitenumerique's calendar-owner-type
-    // extension. Null when the CalDAV server doesn't expose it.
-    owner_type?: string | null;
-};
-
-type ConflictInfo = {
-    summary: string;
-    start: string | null;
-    end: string | null;
-    // All-day events carry a date (not datetime). The backend surfaces
-    // the distinction so the UI can format without a timezone shift —
-    // ``new Date("2026-06-01")`` parses as midnight UTC and converts
-    // to local time, which can render the day before for users west
-    // of UTC.
-    all_day?: boolean;
-    calendar_name: string;
 };
 
 // PARTSTAT values for an already-stored copy of the invite, surfaced by
@@ -136,75 +108,6 @@ const DownloadButton = ({
         <Button {...commonProps} href={downloadUrl} download={filename}>
             {label}
         </Button>
-    );
-};
-
-/**
- * Format a conflict's ``start`` value for display.
- *
- * All-day events arrive as plain ISO dates (``"2026-06-01"``). Passing
- * that to ``new Date(...).toLocaleString()`` parses it as midnight UTC
- * and converts to local time, which renders the day before for users
- * west of UTC. Format date-only inputs through ``toLocaleDateString``
- * with the UTC TZ pinned, so the day matches what the user actually
- * agreed to.
- */
-const formatConflictTime = (
-    iso: string,
-    allDay: boolean,
-    language: string,
-): string => {
-    if (allDay) {
-        return new Date(iso).toLocaleDateString(language, {
-            timeZone: "UTC",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-        });
-    }
-    return new Date(iso).toLocaleString(language);
-};
-
-/**
- * Conflict detection display
- */
-const ConflictWarning = ({ conflicts, language }: { conflicts: ConflictInfo[]; language: string }) => {
-    const { t } = useTranslation();
-    if (conflicts.length === 0) return null;
-
-    return (
-        <div className="calendar-invite__conflicts" role="alert">
-            <div className="calendar-invite__conflicts-header">
-                <Icon name="warning" type={IconType.OUTLINED} />
-                <span>
-                    {t("{{count}} conflicting events", { count: conflicts.length })}
-                </span>
-            </div>
-            <ul className="calendar-invite__conflicts-list">
-                {conflicts.map((conflict, idx) => (
-                    <li
-                        key={`${conflict.calendar_name}-${conflict.summary}-${conflict.start ?? idx}`}
-                        className="calendar-invite__conflict-item"
-                    >
-                        <span className="calendar-invite__conflict-summary">
-                            {conflict.summary}
-                        </span>
-                        <span className="calendar-invite__conflict-calendar">
-                            {conflict.calendar_name}
-                        </span>
-                        {conflict.start && (
-                            <span className="calendar-invite__conflict-time">
-                                {formatConflictTime(
-                                    conflict.start,
-                                    conflict.all_day === true,
-                                    language,
-                                )}
-                            </span>
-                        )}
-                    </li>
-                ))}
-            </ul>
-        </div>
     );
 };
 
@@ -372,12 +275,12 @@ export function buildAttendeeList(event: IcsEvent): AttendeeEntry[] {
 const EventCard = ({
     event,
     language,
-    conflicts,
+    conflictCheck,
     headerRight,
 }: {
     event: IcsEvent;
     language: string;
-    conflicts: ConflictInfo[];
+    conflictCheck?: ReactNode;
     headerRight?: ReactNode;
 }) => {
     const { t } = useTranslation();
@@ -567,10 +470,7 @@ const EventCard = ({
                     </div>
                 )}
 
-                {/* Conflict Warning */}
-                {conflicts.length > 0 && (
-                    <ConflictWarning conflicts={conflicts} language={language} />
-                )}
+                {conflictCheck}
 
                 {/* Participants (organizer first, then attendees) */}
                 {hasAttendees && (
@@ -668,15 +568,6 @@ const fetchIcsContent = async (url: string): Promise<string> => {
     return response.text();
 };
 
-type CalendarsApiResponse = {
-    data: {
-        calendars: CalendarInfo[];
-        web_url?: string | null;
-        configured?: boolean;
-    };
-    status: number;
-};
-
 type ConflictsApiResponse = {
     data: {
         conflicts: ConflictInfo[];
@@ -686,8 +577,12 @@ type ConflictsApiResponse = {
         // several attendee-owned calendars shows the right prior response
         // for each.
         existing_partstats?: Record<string, ExistingPartstat>;
+        // Calendars that already hold this invitation.
+        existing_calendar_ids?: string[];
     };
     status: number;
+    // The calendars this result was checked against.
+    calendarIds: string[];
 };
 
 type RsvpApiResponse = {
@@ -702,6 +597,7 @@ export const CalendarInvite = ({
     mailboxEmail,
 }: CalendarInviteProps) => {
     const { t, i18n } = useTranslation();
+    const queryClient = useQueryClient();
     const [selectedCalendarId, setSelectedCalendarId] = useState<string | null>(null);
     // RSVP choice keyed by attendee identity (the selected calendar's owner,
     // or the acting mailbox when the server exposes no owner). A single
@@ -737,18 +633,21 @@ export const CalendarInvite = ({
         data: calendarsResponse,
         isError: isCalendarsError,
         isLoading: isCalendarsLoading,
-    } = useQuery<CalendarsApiResponse>({
-        queryKey: ["calendar-calendars", mailboxId],
-        queryFn: () =>
-            fetchAPI<CalendarsApiResponse>(
-                `/api/v1.0/mailboxes/${mailboxId}/calendar/calendars/`,
-            ),
-        enabled: !!mailboxId,
-        meta: { noGlobalError: true },
-    });
+    } = useMailboxCalendars(mailboxId);
 
-    const calendars = isCalendarsError ? [] : (calendarsResponse?.data?.calendars ?? []);
+    const allCalendars = useMemo(
+        () => (isCalendarsError ? [] : (calendarsResponse?.data?.calendars ?? [])),
+        [isCalendarsError, calendarsResponse],
+    );
+    // Only writable calendars can receive the event; all of them can be
+    // checked for conflicts.
+    const calendars = useMemo(
+        () => allCalendars.filter((c) => c.writable !== false),
+        [allCalendars],
+    );
     const calendarsWebUrl = calendarsResponse?.data?.web_url || null;
+    const { mailboxes } = useMailboxContext();
+    const isSharedMailbox = mailboxes?.find((m) => m.id === mailboxId)?.is_identity === false;
     // When the backend reports the CalDAV integration is not configured at all
     // for this deployment/mailbox we hide the footer entirely instead of
     // nudging the user toward a service that doesn't exist. Treat the flag
@@ -803,16 +702,16 @@ export const CalendarInvite = ({
         [attendeeEmails, mailboxEmail],
     );
 
-    // Default to the first calendar that actually represents an attendee
-    // on this invite — so opening a mailbox-addressed invite while
-    // sitting on your personal mailbox auto-selects the mailbox calendar.
-    // Falls back to ``calendars[0]`` when no calendar matches (the user
-    // can still "Add to calendar"; RSVP buttons stay hidden).
+    // The mailbox's default calendar when it speaks for an attendee, else the
+    // first calendar that does (RSVP needs one), else the default.
+    const preferredCalendarId = calendarsResponse?.data?.default_calendar_id ?? null;
     const defaultCalendarId = useMemo(() => {
         if (calendars.length === 0) return null;
+        const preferred = calendars.find((c) => c.id === preferredCalendarId);
+        if (preferred && calendarMatchesAttendee(preferred)) return preferred.id;
         const match = calendars.find(calendarMatchesAttendee);
-        return (match ?? calendars[0]).id;
-    }, [calendars, calendarMatchesAttendee]);
+        return (match ?? preferred ?? calendars[0]).id;
+    }, [calendars, calendarMatchesAttendee, preferredCalendarId]);
     // Ignore ``selectedCalendarId`` when it no longer matches any calendar
     // in the current list — otherwise a stale id (mailbox switch, calendar
     // deleted server-side) would flow into the RSVP/add-to-calendar POST
@@ -826,6 +725,16 @@ export const CalendarInvite = ({
     const selectedCalendar = useMemo(
         () => calendars.find((c) => c.id === effectiveCalendarId) ?? null,
         [calendars, effectiveCalendarId],
+    );
+
+    // The calendars the user chose to check for conflicts; by default the one
+    // the event goes into.
+    const [chosenCalendarIds, setChosenCalendarIds] = useConflictCalendarIds(
+        mailboxId,
+        allCalendars.map((c) => c.id),
+        effectiveCalendarId
+            ? [effectiveCalendarId]
+            : (calendarsResponse?.data?.default_conflict_calendar_ids ?? []),
     );
 
     // Identity the selected calendar speaks for — its owner when the CalDAV
@@ -858,6 +767,12 @@ export const CalendarInvite = ({
     const eventEnd = getEventEnd(firstEvent);
     const eventUid = firstEvent?.uid;
 
+    // The calendar the event goes into is always checked.
+    const conflictCalendarIds =
+        effectiveCalendarId && !chosenCalendarIds.includes(effectiveCalendarId)
+            ? [...chosenCalendarIds, effectiveCalendarId]
+            : chosenCalendarIds;
+
     const { data: conflictsResponse, isError: isConflictsError } = useQuery<ConflictsApiResponse>({
         queryKey: [
             "calendar-conflicts",
@@ -865,9 +780,10 @@ export const CalendarInvite = ({
             eventStart?.toISOString(),
             eventEnd?.toISOString(),
             eventUid,
+            conflictCalendarIds.join(","),
         ],
-        queryFn: () =>
-            fetchAPI<ConflictsApiResponse>(
+        queryFn: async () => ({
+            ...(await fetchAPI<Omit<ConflictsApiResponse, "calendarIds">>(
                 `/api/v1.0/mailboxes/${mailboxId}/calendar/conflicts/`,
                 {
                     method: "POST",
@@ -878,14 +794,61 @@ export const CalendarInvite = ({
                         // Exclude prior imports of this same invite so we don't
                         // flag the event as conflicting with itself.
                         exclude_uid: eventUid,
+                        // Still sent when empty: the response also carries the
+                        // prior RSVP, found in any calendar.
+                        calendar_ids: conflictCalendarIds,
                     }),
                 },
-            ),
-        enabled: !!mailboxId && hasCalDAV && !!eventStart && !!eventEnd,
+            )),
+            calendarIds: conflictCalendarIds,
+        }),
+        enabled: !!mailboxId && allCalendars.length > 0 && !!eventStart && !!eventEnd,
+        // Keep the last result while the checked calendars change, so the box
+        // doesn't flash "No conflicts" in between.
+        placeholderData: keepPreviousData,
         meta: { noGlobalError: true },
     });
 
     const conflicts = isConflictsError ? [] : (conflictsResponse?.data?.conflicts ?? []);
+    // Saving to a calendar also checks it for conflicts.
+    const selectSaveCalendar = (id: string | null) => {
+        setSelectedCalendarId(id);
+        if (id && !chosenCalendarIds.includes(id)) {
+            setChosenCalendarIds([...chosenCalendarIds, id]);
+        }
+    };
+    const linkHint =
+        isCalDAVConfigured && isSharedMailbox && calendarsWebUrl && !allCalendars.some((c) => c.linked) ? (
+            <p className="calendar-invite__conflicts-hint">
+                {t("This mailbox has no calendar of its own.")}{" "}
+                <a href={calendarsWebUrl} target="_blank" rel="noopener noreferrer">
+                    {t("Link a calendar in Calendars")}
+                </a>
+            </p>
+        ) : null;
+    // Only a successful check is shown: a failed one must not look like "No conflicts".
+    const conflictCheck =
+        conflictsResponse && !isConflictsError && conflictCalendarIds.length > 0 && eventStart && eventEnd ? (
+            <ConflictCheck
+                calendars={allCalendars}
+                checkedIds={conflictCalendarIds}
+                fetchedIds={conflictsResponse.calendarIds}
+                onCheck={setChosenCalendarIds}
+                conflicts={conflicts}
+                event={{
+                    start: eventStart,
+                    end: eventEnd,
+                    allDay: isAllDayEvent(eventStart, eventEnd),
+                    title: firstEvent?.summary ?? "",
+                }}
+                language={language}
+                lockedId={effectiveCalendarId}
+                savedIds={conflictsResponse.data.existing_calendar_ids ?? []}
+                footer={linkHint}
+            />
+        ) : (
+            linkHint
+        );
     // Conflict-query failure is non-blocking: calendars loaded fine, so the
     // user can still RSVP / add the event. Only treat calendar-listing
     // failures or actual emptiness as "unavailable".
@@ -947,6 +910,8 @@ export const CalendarInvite = ({
                     </span>
                 </ToasterItem>,
             );
+            // The event is now in a calendar: show it on the timeline.
+            void queryClient.invalidateQueries({ queryKey: ["calendar-conflicts", mailboxId] });
         } else if (taskStatus.state === StatusEnum.FAILURE) {
             setTaskId(null);
             setIsSubmitting(false);
@@ -974,7 +939,7 @@ export const CalendarInvite = ({
                 </ToasterItem>,
             );
         }
-    }, [taskStatus, pendingActionIsRsvp, t]);
+    }, [taskStatus, pendingActionIsRsvp, t, queryClient, mailboxId]);
 
     const handleRsvp = useCallback(
         async (response: RsvpResponse) => {
@@ -1193,7 +1158,7 @@ export const CalendarInvite = ({
                 <CalendarChooser
                     calendars={calendars}
                     selectedCalendarId={effectiveCalendarId}
-                    onSelect={setSelectedCalendarId}
+                    onSelect={selectSaveCalendar}
                     calendarsWebUrl={calendarsWebUrl}
                 />
                 <div className="calendar-invite__connection-actions">
@@ -1252,7 +1217,7 @@ export const CalendarInvite = ({
                     key={event.uid || index}
                     event={event}
                     language={language}
-                    conflicts={index === 0 ? conflicts : []}
+                    conflictCheck={index === 0 ? conflictCheck : null}
                     headerRight={index === 0 ? headerRight : null}
                 />
             ))}
