@@ -44,6 +44,7 @@ from core.mda.inbound_auth import (
     trusted_arc_sealers,
 )
 from core.services.thread_events import assign_users
+from core.signals import _schedule_thread_reindex
 
 logger = logging.getLogger(__name__)
 
@@ -625,8 +626,8 @@ def apply_thread_access_flags(
     moves ``read_at`` forward to now, so the message just delivered is
     read even in a thread read before. Neither ever unstars or unreads,
     and both are no-ops when the corresponding bool is False. Each is a
-    conditional UPDATE, so concurrent deliveries cannot move a value back.
-    The ``ThreadAccess`` row may not exist if the destination mailbox
+    conditional UPDATE, so concurrent deliveries cannot move a value back;
+    the thread is reindexed when a value changed. The ``ThreadAccess`` row may not exist if the destination mailbox
     doesn't have one yet (rare: brand-new thread, race with deletion); in
     that case we log and skip rather than fail delivery.
     """
@@ -642,12 +643,16 @@ def apply_thread_access_flags(
         )
         return
     now = timezone.now()
+    changed = 0
     if mark_starred:
-        accesses.filter(starred_at__isnull=True).update(starred_at=now)
+        changed += accesses.filter(starred_at__isnull=True).update(starred_at=now)
     if mark_read:
-        accesses.filter(Q(read_at__isnull=True) | Q(read_at__lt=now)).update(
+        changed += accesses.filter(Q(read_at__isnull=True) | Q(read_at__lt=now)).update(
             read_at=now
         )
+    if changed:
+        # An UPDATE sends no post_save: reindex as the ThreadAccess one does.
+        _schedule_thread_reindex(thread.id)
 
 
 def _channels_by_id(channel_ids: List[Any]) -> Dict[Any, models.Channel]:

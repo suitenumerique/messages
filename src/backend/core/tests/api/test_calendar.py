@@ -17,7 +17,10 @@ from icalendar import Calendar as ICalendar
 
 from core import factories
 from core.enums import ChannelTypes, MailboxRoleChoices
-from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.ics_rebuild import (
+    UnstorableCalendarError,
+    rebuild_for_storage,
+)
 from core.services.calendar.service import CalDAVError, CalDAVService
 
 
@@ -1516,15 +1519,23 @@ class TestRebuildForStorage:
             attendees = [attendees]
         assert len(attendees) == 2
 
-    def test_drops_event_without_uid(self):
+    def test_refuses_event_without_uid(self):
         ics = (
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
             "BEGIN:VEVENT\r\nDTSTART:20260601T100000Z\r\n"
             "DTEND:20260601T110000Z\r\nSUMMARY:no-uid\r\n"
             "END:VEVENT\r\nEND:VCALENDAR\r\n"
         )
-        out = self._rebuild(ics)
-        assert len(out.walk("VEVENT")) == 0
+        with pytest.raises(UnstorableCalendarError):
+            self._rebuild(ics)
+
+    def test_refuses_calendar_without_event(self):
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VTODO\r\nUID:u\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+        )
+        with pytest.raises(UnstorableCalendarError):
+            self._rebuild(ics)
 
     def test_synthesizes_missing_dtstamp(self):
         ics = (
@@ -1601,18 +1612,20 @@ class TestRebuildForStorage:
             "DTEND:20260601T110000Z",
         ],
     )
-    def test_drops_event_without_readable_dtstart(self, dates):
+    def test_refuses_event_without_readable_dtstart(self, dates):
         """No readable DTSTART: the event cannot be stored usefully."""
         ics = (
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
             "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
             f"{dates}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
         )
-        assert len(self._rebuild(ics).walk("VEVENT")) == 0
+        with pytest.raises(UnstorableCalendarError):
+            self._rebuild(ics)
 
-    def test_drops_exception_with_unreadable_recurrence_id(self):
+    def test_refuses_series_with_unreadable_recurrence_id(self):
         """Without its RECURRENCE-ID an exception would become a second
-        master of the series: the exception is dropped, the master kept."""
+        master; without the exception, the master would show the moved
+        occurrence at its old time: the series is refused."""
         ics = (
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
             "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
@@ -1625,27 +1638,83 @@ class TestRebuildForStorage:
             "RECURRENCE-ID:20260615T100000Z\r\nDTSTART:20260615T140000Z\r\n"
             "END:VEVENT\r\nEND:VCALENDAR\r\n"
         )
-        events = self._rebuild(ics).walk("VEVENT")
-        assert len(events) == 2
-        assert "RECURRENCE-ID" not in events[0]
-        assert events[1]["RECURRENCE-ID"].dt == datetime(
-            2026, 6, 15, 10, tzinfo=timezone.utc
+        with pytest.raises(UnstorableCalendarError):
+            self._rebuild(ics)
+
+    @pytest.mark.parametrize(
+        "dates",
+        [
+            "EXDATE:garbage",
+            "EXDATE:20260608T100000Z,garbage",
+            "EXDATE:20260608T100000Z\r\nEXDATE:00000615T100000Z",
+            "RDATE:garbage",
+        ],
+    )
+    def test_refuses_series_with_unreadable_recurrence_dates(self, dates):
+        """Without an EXDATE a cancelled occurrence would come back, without
+        an RDATE an added one would be missing."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\n"
+            f"{dates}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        with pytest.raises(UnstorableCalendarError):
+            self._rebuild(ics)
+
+    def test_keeps_readable_recurrence_dates(self):
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nRRULE:FREQ=WEEKLY;COUNT=5\r\n"
+            "EXDATE:20260608T100000Z,20260615T100000Z\r\n"
+            "EXDATE:20260622T100000Z\r\nRDATE:20260603T100000Z\r\n"
+            "END:VEVENT\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "RECURRENCE-ID:20260629T100000Z\r\nDTSTART:20260629T140000Z\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        master, exception = self._rebuild(ics).walk("VEVENT")
+        excluded = [d.dt for exdate in master["EXDATE"] for d in exdate.dts]
+        assert excluded == [
+            datetime(2026, 6, day, 10, tzinfo=timezone.utc) for day in (8, 15, 22)
+        ]
+        assert master["RDATE"].dts[0].dt == datetime(
+            2026, 6, 3, 10, tzinfo=timezone.utc
+        )
+        assert exception["RECURRENCE-ID"].dt == datetime(
+            2026, 6, 29, 10, tzinfo=timezone.utc
         )
 
+    def test_add_event_refuses_unstorable_calendar(self):
+        """Nothing is written and the user is told why."""
+        service = CalDAVService(url="https://caldav.example.com/home/")
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\n"
+            "EXDATE:garbage\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        with (
+            mock.patch.object(service, "_request") as request,
+            pytest.raises(CalDAVError, match="cannot be stored"),
+        ):
+            service.add_event(ics, calendar_id="https://caldav.example.com/cal/")
+        request.assert_not_called()
+
     def test_drops_unreadable_and_repeated_dates(self):
-        """An unreadable DTEND/EXDATE/DTSTAMP is dropped, a second DTSTART
-        is ignored, and the output reads back."""
+        """An unreadable DTEND/DTSTAMP is dropped, a second DTSTART is
+        ignored, and the output reads back."""
         ics = (
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
             "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:garbage\r\n"
             "DTSTART:20260601T100000Z\r\nDTSTART:20260602T100000Z\r\n"
-            "DTEND:99999999T999999Z\r\nEXDATE:garbage\r\n"
+            "DTEND:99999999T999999Z\r\n"
             "END:VEVENT\r\nEND:VCALENDAR\r\n"
         )
         event = self._rebuild(ics).walk("VEVENT")[0]
         assert event["DTSTART"].dt == datetime(2026, 6, 1, 10, tzinfo=timezone.utc)
         assert "DTEND" not in event
-        assert "EXDATE" not in event
         assert isinstance(event["DTSTAMP"].dt, datetime)
         reparsed = ICalendar.from_ical(self._rebuild(ics).to_ical())
         assert isinstance(reparsed.walk("VEVENT")[0]["DTSTART"].dt, datetime)

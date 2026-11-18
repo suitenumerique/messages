@@ -113,10 +113,20 @@ _SUBHOURLY_MAX_COUNT = 1000
 _SINGLE_DATES = frozenset(
     {"DTSTAMP", "CREATED", "LAST-MODIFIED", "DTSTART", "DTEND", "RECURRENCE-ID"}
 )
+# Date properties that define which occurrences exist.
+_RECURRENCE_DATES = frozenset({"RECURRENCE-ID", "RDATE", "EXDATE"})
+
+
+class UnstorableCalendarError(ValueError):
+    """The calendar has an event that cannot be stored faithfully."""
 
 
 def rebuild_for_storage(cal):
     """Return a fresh VCALENDAR containing only allowlisted properties.
+
+    Raises ``UnstorableCalendarError`` when there is no event, or when an
+    event has to be dropped: the events of a calendar are the master and
+    exceptions of one series, which is stored whole or not at all.
 
     Default-deny posture: inbound .ics is attacker-controlled (it
     arrives as an email attachment), so rather than try to enumerate
@@ -156,7 +166,7 @@ def rebuild_for_storage(cal):
     for vevent in cal.walk("VEVENT"):
         clean = _rebuild_event(vevent)
         if clean is None:
-            continue
+            raise UnstorableCalendarError("An event has no UID or unreadable dates.")
         for prop in ("DTSTART", "DTEND", "RECURRENCE-ID", "RDATE", "EXDATE"):
             val = clean.get(prop)
             if val is None:
@@ -166,6 +176,8 @@ def rebuild_for_storage(cal):
                 if tzid:
                     referenced_tzids.add(str(tzid))
         rebuilt_events.append(clean)
+    if not rebuilt_events:
+        raise UnstorableCalendarError("The calendar has no event.")
 
     # Pass 2: preserve only the VTIMEZONEs our kept events use.
     for vtz in cal.walk("VTIMEZONE"):
@@ -182,8 +194,8 @@ def _rebuild_event(src):
     """Build a fresh VEVENT containing only allowlisted properties.
 
     Returns ``None`` if the source has no UID (malformed event per
-    RFC 5545 — skip rather than store). A missing DTSTAMP is
-    synthesized (see fallback chain below).
+    RFC 5545), no readable DTSTART, or a recurrence date that cannot be
+    read. A missing DTSTAMP is synthesized (see fallback chain below).
 
     DTSTAMP caveat: iTIP sequencing (RFC 5546 §3.2.6) compares
     SEQUENCE first, then DTSTAMP, to decide whether an inbound
@@ -201,6 +213,7 @@ def _rebuild_event(src):
     inversion on follow-up updates.
     """
     fresh = ICalEvent()
+    recurrence_dropped = False
     for key in list(src.keys()):
         upper = key.upper()
         if upper not in _VEVENT_KEEP:
@@ -212,6 +225,7 @@ def _rebuild_event(src):
                 continue
             cleaned = _clean_property_value(upper, item)
             if cleaned is None:
+                recurrence_dropped |= upper in _RECURRENCE_DATES
                 continue
             _filter_params(upper, cleaned)
             # ``encode=0``: the value is already a typed icalendar
@@ -219,12 +233,12 @@ def _rebuild_event(src):
             # don't want add() to re-encode and lose the params.
             fresh.add(key, cleaned, encode=0)
 
-    # Without a readable DTSTART the event cannot be shown or scheduled. An
-    # exception whose RECURRENCE-ID was dropped would turn into a second
-    # master event of the series: dropped too.
-    if "UID" not in fresh or "DTSTART" not in fresh:
-        return None
-    if src.get("RECURRENCE-ID") is not None and "RECURRENCE-ID" not in fresh:
+    # Without a readable DTSTART the event cannot be shown or scheduled. A
+    # recurrence date that cannot be read is not dropped alone: without its
+    # RECURRENCE-ID an exception would become a second master of the
+    # series, and without an RDATE or EXDATE the series would miss an
+    # occurrence or show a cancelled one.
+    if "UID" not in fresh or "DTSTART" not in fresh or recurrence_dropped:
         return None
     stamp = fresh.get("DTSTAMP")
     if stamp is not None and not isinstance(stamp.dt, datetime):

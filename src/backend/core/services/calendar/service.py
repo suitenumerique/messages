@@ -20,7 +20,10 @@ from defusedxml.ElementTree import ParseError as DefusedParseError
 from icalendar import Calendar as ICalendar
 
 from core.mda.addresses import ascii_lower, normalize_address
-from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.ics_rebuild import (
+    UnstorableCalendarError,
+    rebuild_for_storage,
+)
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -105,6 +108,14 @@ class CalDAVError(Exception):
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
+
+
+def _rebuild(cal):
+    """``rebuild_for_storage``, with a refusal as a CalDAVError."""
+    try:
+        return rebuild_for_storage(cal)
+    except UnstorableCalendarError as exc:
+        raise CalDAVError("This event cannot be stored: its data is invalid.") from exc
 
 
 class CalDAVService:  # pylint: disable=too-many-instance-attributes
@@ -586,7 +597,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     def add_event(self, ics_data, calendar_id=None):
         """Store an event on the selected calendar (or the default one)."""
         cal = ICalendar.from_ical(ics_data)
-        cal = rebuild_for_storage(cal)
+        cal = _rebuild(cal)
         # Suppress server-side iTIP REQUEST fan-out. sabre/dav's Schedule
         # plugin (used by suitenumerique/calendars) auto-dispatches one
         # iTIP REQUEST per ATTENDEE on any PUT where the calendar owner is
@@ -655,7 +666,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 "RSVP would not notify the organizer."
             )
 
-        cal = rebuild_for_storage(cal)
+        cal = _rebuild(cal)
 
         self._put_event(
             calendar["id"],

@@ -168,7 +168,7 @@ const TIMEZONE_OPTIONS = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("t
     value: tz,
 }));
 
-const autoreplyComposerSchema = () => z.object({
+const autoreplyComposerSchema = (origin?: AutoreplyScheduleOrigin) => z.object({
     name: z.string().min(1, { error: i18n.t("Name is required") }),
     is_active: z.boolean(),
     rawBody: z.string().min(1, { error: i18n.t("Content is required") }),
@@ -188,11 +188,11 @@ const autoreplyComposerSchema = () => z.object({
         if (!data.end_at) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("End date is required"), path: ["end_at"] });
         }
-        // As instants in the chosen zone, as the backend compares them.
+        // The bounds that will be saved, as instants, as the backend compares them.
         if (
             data.start_at
             && data.end_at
-            && !startsBeforeEnd(data.start_at, data.end_at, DateHelper.resolveTimeZone(data.timezone))
+            && !startsBeforeEnd(data, DateHelper.resolveTimeZone(data.timezone), origin)
         ) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("Start date must be before end date"), path: ["start_at"] });
         }
@@ -239,7 +239,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
     };
 
     const form = useForm<AutoreplyComposerFormData>({
-        resolver: zodResolver(autoreplyComposerSchema()),
+        resolver: zodResolver(autoreplyComposerSchema(defaultValue ? origin : undefined)),
         defaultValues: {
             name: defaultValue?.name ?? "",
             is_active: defaultValue?.is_active ?? true,

@@ -3087,6 +3087,40 @@ class TestPipelineWebhookFlagActions:
         access.refresh_from_db()
         assert access.read_at == later
 
+    def test_flag_change_reindexes_thread_after_commit(
+        self, settings, django_capture_on_commit_callbacks
+    ):
+        """The search index carries the read and starred state."""
+        settings.OPENSEARCH_INDEX_THREADS = True
+        access = factories.ThreadAccessFactory()
+        with patch("core.signals.enqueue_thread_reindex") as mock_enqueue:
+            with django_capture_on_commit_callbacks() as callbacks:
+                apply_thread_access_flags(
+                    access.thread, access.mailbox, mark_starred=True, mark_read=True
+                )
+            mock_enqueue.assert_not_called()
+            for callback in callbacks:
+                callback()
+        mock_enqueue.assert_called_once_with(access.thread.id)
+
+    def test_unchanged_flags_do_not_reindex(
+        self, settings, django_capture_on_commit_callbacks
+    ):
+        settings.OPENSEARCH_INDEX_THREADS = True
+        access = factories.ThreadAccessFactory()
+        later = dj_timezone.now() + timedelta(seconds=30)
+        models.ThreadAccess.objects.filter(pk=access.pk).update(
+            read_at=later, starred_at=later
+        )
+        with (
+            patch("core.signals.enqueue_thread_reindex") as mock_enqueue,
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            apply_thread_access_flags(
+                access.thread, access.mailbox, mark_starred=True, mark_read=True
+            )
+        mock_enqueue.assert_not_called()
+
     def test_mark_trashed_and_archived_set_message_fields(self):
         mailbox = factories.MailboxFactory()
         message = self._send(
