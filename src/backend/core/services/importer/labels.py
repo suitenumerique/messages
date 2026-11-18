@@ -5,7 +5,7 @@ import re
 
 from jmap_email.types import JmapEmail
 
-from core import models
+from core import enums, models
 from core.mda.utils import gmail_labels, header_value
 
 logger = logging.getLogger(__name__)
@@ -225,6 +225,15 @@ def handle_duplicate_message(
     for flag, value in changed_flags.items():
         setattr(existing_message, flag, value)
     if changed_flags:
+        if changed_flags.get("is_sender") and not existing_message.is_draft:
+            # A copy first received over SMTP has recipients without delivery
+            # status. Once the import reveals it was sent from this mailbox,
+            # that status reads as "still to send" and retry_messages_task
+            # would resend the stored mail: mark them sent, as a fresh import
+            # does.
+            existing_message.recipients.filter(delivery_status__isnull=True).update(
+                delivery_status=enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+            )
         existing_message.save(update_fields=list(changed_flags))
         # The folders list threads by their denormalized flags.
         existing_message.thread.update_stats()

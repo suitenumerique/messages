@@ -20,6 +20,8 @@ from jmap_email import parse_email
 from core import enums, factories, models
 from core.api.serializers import ImportRunSerializer
 from core.mda.inbound import deliver_inbound_message
+from core.mda.inbound_create import _create_message_from_inbound
+from core.mda.outbound_tasks import retry_messages_task
 from core.services.importer import channel as channel_module
 from core.services.importer.channel import (
     cancel_import,
@@ -300,6 +302,85 @@ class TestLabelsAndDuplicateMerge:
         # importing mailbox.
         access = models.ThreadAccess.objects.get(thread=message.thread, mailbox=mailbox)
         assert access.read_at is not None
+
+    @staticmethod
+    def _sent_elsewhere_raw(mailbox):
+        """A mail sent from the user's old address with this mailbox in Bcc."""
+        return (
+            "From: me@old-provider.example\r\n"
+            "To: someone@external.example\r\n"
+            f"Bcc: {mailbox}\r\n"
+            "Subject: Hello\r\n"
+            "Message-ID: <sent-elsewhere@old-provider.example>\r\n"
+            "Date: Mon, 26 May 2025 20:13:44 +0200\r\n"
+            "\r\nbody"
+        ).encode()
+
+    def test_received_copy_reimported_from_sent_is_not_resent(self, mailbox, user):
+        """A mail first received over SMTP, then imported again from the old
+        Sent folder, becomes sent mail without landing in the outbox: the
+        retry task would otherwise resend the stored original."""
+        raw = self._sent_elsewhere_raw(mailbox)
+        received = _create_message_from_inbound(
+            recipient_email=str(mailbox),
+            parsed_email=parse_email(raw),
+            raw_data=raw,
+            mailbox=mailbox,
+        )
+        assert received.is_sender is False
+        assert set(received.recipients.values_list("delivery_status", flat=True)) == {
+            None
+        }
+
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        assert deliver_inbound_message(
+            str(mailbox),
+            parse_email(raw),
+            raw,
+            is_import=True,
+            channel=channel,
+            imap_labels=["Sent"],
+        )
+
+        received.refresh_from_db()
+        assert received.is_sender is True
+        assert set(received.recipients.values_list("delivery_status", flat=True)) == {
+            enums.MessageDeliveryStatusChoices.SENT_EXTERNAL
+        }
+        received.thread.refresh_from_db()
+        assert received.thread.has_delivery_pending is False
+
+        with mock.patch("core.mda.outbound_tasks.send_message") as send_message:
+            retry_messages_task.apply()
+        send_message.assert_not_called()
+
+    def test_draft_reimported_from_sent_keeps_recipients_undelivered(
+        self, mailbox, user
+    ):
+        """A draft stays a draft whatever folder it is found in again: its
+        recipients must stay deliverable for when the user sends it."""
+        raw = self._sent_elsewhere_raw(mailbox)
+        channel = create_import_channel(
+            recipient=mailbox, user=user, source_type=enums.ImportSource.IMAP.value
+        )
+        for imap_labels in (["Drafts"], ["Sent"]):
+            assert deliver_inbound_message(
+                str(mailbox),
+                parse_email(raw),
+                raw,
+                is_import=True,
+                channel=channel,
+                imap_labels=imap_labels,
+            )
+
+        message = models.Message.objects.get(channel=channel)
+        assert message.is_draft is True
+        assert message.is_sender is True
+        assert set(message.recipients.values_list("delivery_status", flat=True)) == {
+            None
+        }
 
 
 @pytest.mark.django_db
