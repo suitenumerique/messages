@@ -1592,6 +1592,38 @@ class TestRebuildForStorage:
         out = self._rebuild(ics)
         assert "RRULE" not in out.walk("VEVENT")[0]
 
+    @pytest.mark.parametrize(
+        ("rrule", "kept"),
+        [
+            # DTSTART 10:00: every 15 minutes until noon, 9 occurrences.
+            ("FREQ=MINUTELY;INTERVAL=15;UNTIL=20260601T120000Z", True),
+            ("FREQ=SECONDLY;INTERVAL=30;UNTIL=20260601T103000Z", True),
+            ("FREQ=MINUTELY;BYSECOND=0,30;UNTIL=20260601T120000Z", True),
+            # A day of seconds, or BYSECOND expanding 20 minutes past 1000.
+            ("FREQ=SECONDLY;UNTIL=20260602T100000Z", False),
+            (
+                "FREQ=MINUTELY;BYSECOND="
+                + ",".join(map(str, range(60)))
+                + ";UNTIL=20260601T102000Z",
+                False,
+            ),
+            ("FREQ=MINUTELY;INTERVAL=0;UNTIL=20260601T120000Z", False),
+            # A date UNTIL with a UTC DTSTART: cannot be compared.
+            ("FREQ=MINUTELY;UNTIL=20260601", False),
+        ],
+    )
+    def test_subhourly_rrule_bounded_by_until(self, rrule, kept):
+        """An UNTIL is kept when it bounds the rule to a few occurrences."""
+        ics = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//x//EN\r\n"
+            "BEGIN:VEVENT\r\nUID:u\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T101000Z\r\n"
+            f"RRULE:{rrule}\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+        out = self._rebuild(ics)
+        assert ("RRULE" in out.walk("VEVENT")[0]) is kept
+
     def test_keeps_daily_rrule_with_far_until(self):
         """Only sub-hourly rules are limited."""
         ics = (

@@ -21,7 +21,13 @@ import { DateHelper } from "@/features/utils/date-helper";
 import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 import { extractSignatureId } from "../utils";
 import { TemplateComposer } from "../modal-compose-template/template-composer";
-import { AutoreplyScheduleOrigin, buildAutoreplyMetadata, startsBeforeEnd } from "./autoreply-schedule";
+import {
+    AutoreplyScheduleOrigin,
+    buildAutoreplyMetadata,
+    intervalFormValues,
+    startsBeforeEnd,
+    timeZoneOptions,
+} from "./autoreply-schedule";
 
 type ModalComposeMailboxAutoreplyProps = {
     isOpen: boolean;
@@ -162,11 +168,7 @@ const WEEKDAY_OPTIONS = [
     { label: i18n.t("Sunday"), value: "7" },
 ];
 
-// The backend's default; some engines (V8) leave it out of the list.
-const TIMEZONE_OPTIONS = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("timeZone")])).map((tz) => ({
-    label: tz.replace(/_/g, " "),
-    value: tz,
-}));
+const TIMEZONES = Intl.supportedValuesOf("timeZone");
 
 const autoreplyComposerSchema = (origin?: AutoreplyScheduleOrigin) => z.object({
     name: z.string().min(1, { error: i18n.t("Name is required") }),
@@ -231,6 +233,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
     // is shown in the template's zone.
     const toInput = (value: unknown) =>
         typeof value === "string" ? DateHelper.toWallClock(value, timeZone) ?? "" : "";
+    const timeZoneSelectOptions = timeZoneOptions(TIMEZONES, timeZone);
     const origin: AutoreplyScheduleOrigin = {
         metadata,
         timeZone,
@@ -247,10 +250,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
             schedule_type: (metadata?.schedule_type as "always" | "date_range" | "recurring_weekly") ?? "always",
             start_at: origin.startInput,
             end_at: origin.endInput,
-            interval_start_day: interval0?.start_day != null ? String(interval0.start_day) : "",
-            interval_start_time: (interval0?.start_time as string) ?? "",
-            interval_end_day: interval0?.end_day != null ? String(interval0.end_day) : "",
-            interval_end_time: (interval0?.end_time as string) ?? "",
+            ...intervalFormValues(interval0),
             timezone: timeZone,
         }
     });
@@ -369,7 +369,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                             <RhfSelect
                                 label={t('Timezone')}
                                 name="timezone"
-                                options={TIMEZONE_OPTIONS}
+                                options={timeZoneSelectOptions}
                                 searchable
                                 fullWidth
                             />
@@ -409,7 +409,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                             <RhfSelect
                                 label={t('Timezone')}
                                 name="timezone"
-                                options={TIMEZONE_OPTIONS}
+                                options={timeZoneSelectOptions}
                                 searchable
                                 fullWidth
                             />

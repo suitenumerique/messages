@@ -1,9 +1,45 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../providers/mailbox", () => ({ useMailboxContext: () => ({}) }));
-vi.mock("./use-flag", () => ({ default: () => ({}) }));
+type FlagOptions = { onSuccess: (data: { read_at: string | null; thread_ids: string[]; mailbox_id: string }) => void };
+type Patch<T> = (ids: string[] | string, update: (item: T) => T) => void;
 
-import { readAtBefore, readAtNow } from "./use-read";
+const flagOptions: { current?: FlagOptions } = {};
+const pinThreads = vi.fn<Patch<Record<string, unknown>>>();
+const patchMessages = vi.fn<Patch<Record<string, unknown>>>();
+
+vi.mock("../providers/mailbox", () => ({
+    useMailboxContext: () => ({
+        selectedMailbox: { id: "mailbox-1" },
+        pinThreads,
+        patchMessages,
+        invalidateThreadsStats: () => {},
+    }),
+}));
+vi.mock("./use-flag", () => ({
+    default: (_flag: string, options: FlagOptions) => {
+        flagOptions.current = options;
+        return {};
+    },
+}));
+
+import useRead, { readAtBefore, readAtNow } from "./use-read";
+
+describe("useRead cache patch", () => {
+    it("derives the read state below the millisecond, as the backend does", () => {
+        useRead();
+        // The message at .123456 is after the pointer at .123455.
+        flagOptions.current!.onSuccess({
+            read_at: "2026-11-17T12:00:00.123455Z",
+            thread_ids: ["thread-1"],
+            mailbox_id: "mailbox-1",
+        });
+        const createdAt = "2026-11-17T12:00:00.123456Z";
+        const thread = pinThreads.mock.calls[0][1]({ messaged_at: createdAt, accesses: [] });
+        expect(thread.has_unread).toBe(true);
+        const message = patchMessages.mock.calls[0][1]({ created_at: createdAt });
+        expect(message.is_unread).toBe(true);
+    });
+});
 
 describe("readAtNow", () => {
     afterEach(() => {

@@ -1,4 +1,4 @@
-"""Tests for migration 0038 (clamp stored timestamps to [year 1, now + 1h]).
+"""Tests for migration 0038 (clamp stored timestamps to [year 1, now]).
 
 Bad rows are written with raw SQL: year 0 and year 10000 cannot be built in
 Python, and reading such a row back raises, which is the bug being repaired.
@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 
 from django.apps import apps
 from django.db import connection
+from django.db.models import Max
 from django.utils import timezone
 
 import pytest
@@ -45,9 +46,15 @@ def _thread_with_message():
 
 
 def _is_bound(value, before, after):
-    """Whether ``value`` is the clamp bound, the migration time + 1h."""
-    margin = migration.FUTURE_MARGIN
-    return before + margin <= value <= after + margin
+    """Whether ``value`` is the clamp bound, the migration time."""
+    return before <= value <= after
+
+
+def _latest_message(thread, field):
+    """The ``created_at`` a thread date is recomputed to."""
+    return models.Message.objects.filter(
+        migration.THREAD_DATE_MESSAGES[field], thread=thread
+    ).aggregate(latest=Max("created_at"))["latest"]
 
 
 @pytest.mark.parametrize("literal", [YEAR_10000, YEAR_0])
@@ -74,14 +81,17 @@ def test_unreadable_rows_become_readable(model_name, field, literal):
 
     obj = type(obj).objects.get(pk=obj.pk)
     value = getattr(obj, field)
-    if literal == YEAR_0:
+    if model_name == "thread":
+        assert value == _latest_message(thread, field)
+        if field == "messaged_at":
+            assert value == message.created_at
+    elif field == "read_at" and literal == YEAR_0:
+        # Nothing precedes year 1: all unread.
+        assert value is None
+    elif literal == YEAR_0:
         assert value == migration.EARLIEST
     elif field == "sent_at":
         assert value == obj.created_at
-    elif field == "read_at":
-        # 1 µs before the bound: the thread's message dated now counts as
-        # unread past the year-10000 pointer.
-        assert _is_bound(value, before - migration.ONE_MICROSECOND, timezone.now())
     else:
         assert _is_bound(value, before, timezone.now())
 
@@ -117,8 +127,8 @@ def test_future_dates_clamped():
     assert _is_bound(imported.created_at, before, after)
     assert imported.sent_at == imported.created_at
     thread.refresh_from_db()
-    assert _is_bound(thread.messaged_at, before, after)
-    assert _is_bound(thread.active_messaged_at, before, after)
+    assert thread.messaged_at == imported.created_at
+    assert thread.active_messaged_at == imported.created_at
     # Picked up by ``search_reindex --from-date``.
     assert before <= thread.updated_at <= after
     access.refresh_from_db()
@@ -130,7 +140,7 @@ def test_future_dates_clamped():
 
 def test_thread_date_stays_the_latest_message():
     """A thread with a message kept within the margin and one clamped: its
-    date is still the latest of them (the clamp keeps the order)."""
+    date is recomputed, still the latest of them."""
     thread, _, kept = _thread_with_message()
     clamped = factories.MessageFactory(thread=thread)
     soon = timezone.now() + timedelta(minutes=30)
@@ -148,8 +158,8 @@ def test_thread_date_stays_the_latest_message():
     clamped.refresh_from_db()
     thread.refresh_from_db()
     assert kept.created_at == soon
-    assert clamped.created_at > kept.created_at
-    assert thread.messaged_at == max(kept.created_at, clamped.created_at)
+    assert clamped.created_at < kept.created_at
+    assert thread.messaged_at == kept.created_at
 
 
 def _is_unread(message, access):
@@ -175,7 +185,61 @@ def test_unread_future_message_stays_unread():
 
     assert _is_unread(unread_msg, access)
     access.refresh_from_db()
-    assert access.read_at <= timezone.now() + migration.FUTURE_MARGIN
+    assert access.read_at <= timezone.now()
+    # Also once cut to milliseconds, as the frontend compares.
+    assert unread_msg.created_at - access.read_at >= timedelta(milliseconds=1)
+
+
+def test_mail_after_the_migration_is_unread_and_latest():
+    """Mail delivered right after the migration is after the clamped
+    pointer and thread date, not an hour before them."""
+    thread, access, message = _thread_with_message()
+    in_2099 = datetime(2099, 1, 1, tzinfo=UTC)
+    models.Message.objects.filter(pk=message.pk).update(created_at=in_2099)
+    models.Thread.objects.filter(pk=thread.pk).update(messaged_at=in_2099)
+    models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=in_2099)
+
+    migration.clamp_timestamps(apps, None)
+
+    new_mail = factories.MessageFactory(thread=thread)
+    thread.refresh_from_db()
+    assert _is_unread(new_mail, access)
+    assert new_mail.created_at > thread.messaged_at
+
+
+def test_unread_trashed_message_keeps_a_read_thread_read():
+    """The thread's unread state follows its visible messages: an unread
+    trashed one clamped with them does not make it unread."""
+    thread, access, read_msg = _thread_with_message()
+    trashed = factories.MessageFactory(thread=thread, is_trashed=True)
+    in_2099 = datetime(2099, 1, 1, tzinfo=UTC)
+    models.Message.objects.filter(pk=read_msg.pk).update(created_at=in_2099)
+    models.Message.objects.filter(pk=trashed.pk).update(
+        created_at=datetime(2100, 1, 1, tzinfo=UTC)
+    )
+    models.Thread.objects.filter(pk=thread.pk).update(messaged_at=in_2099)
+    models.ThreadAccess.objects.filter(pk=access.pk).update(read_at=in_2099)
+
+    migration.clamp_timestamps(apps, None)
+
+    thread.refresh_from_db()
+    access.refresh_from_db()
+    assert thread.messaged_at <= access.read_at
+
+
+def test_message_after_a_year_0_pointer_stays_unread():
+    """A message after a year-0 ``read_at``, both clamped to year 1, is still
+    unread: the pointer becomes NULL."""
+    _, access, message = _thread_with_message()
+    _set_raw(models.ThreadAccess, access.pk, "read_at", "0001-01-01 00:00:00+10")
+    _set_raw(models.Message, message.pk, "created_at", "0001-01-01 00:00:00+05")
+
+    migration.clamp_timestamps(apps, None)
+
+    access = models.ThreadAccess.objects.get(pk=access.pk)
+    message = models.Message.objects.get(pk=message.pk)
+    assert message.created_at == migration.EARLIEST
+    assert access.read_at is None
 
 
 def test_read_future_message_stays_read():

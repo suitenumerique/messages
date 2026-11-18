@@ -298,6 +298,9 @@ class TestAutoreplyMetadataValidation:
             "a" * 300,
             "posixrules",
             "Europe/Paris\x00",
+            # In the zone list, but unknown to browsers.
+            "localtime",
+            "Factory",
         ],
     )
     def test_invalid_timezone_type(self, user, mailbox, list_url, tz):
@@ -314,6 +317,22 @@ class TestAutoreplyMetadataValidation:
         payload = _autoreply_payload(timezone=tz)
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize("metadata", [["x"], [], "always", 1])
+    def test_metadata_not_an_object(self, user, mailbox, list_url, metadata):
+        """A metadata that is not an object is refused, not a 500."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = {**_autoreply_payload(), "metadata": metadata}
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "metadata" in response.data
 
     @pytest.mark.parametrize("tz", [None, ""])
     def test_empty_timezone_accepted(self, user, mailbox, list_url, tz):

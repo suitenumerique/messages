@@ -96,7 +96,8 @@ and this project adheres to
 - Splitting a thread whose messages share a date (imports) cuts in display
   order and never moves the first message
 - Autoreply weekly intervals refuse `24:00`, which read as `00:00` and made
-  the interval cover the whole week; a stored one ends with the day
+  the interval cover the whole week; a stored one ends with the day, or
+  starts with the next, and the form opens it instead of failing to save
 - `compose_email` writes a sub-minute offset in UTC instead of an empty
   `Date:`, and refuses a year before 100, which read back as a two-digit year
 - `backfill_postmark` and `backfill_thread_snippets` read a bare `--before`
@@ -106,7 +107,8 @@ and this project adheres to
 - Silent login and the "empty trash" progress no longer stay stuck when the
   device clock was set back
 - The PST import keeps a message whose `Date:` cannot be parsed, dated by the
-  MAPI timestamps, which also replace a `Date:` in the future
+  MAPI timestamps, then its topmost `Received:`, which also replace a `Date:`
+  in the future
 - Autoreply date ranges are compared as instants, which was wrong in the hour
   repeated when DST ends, and a naive bound no longer fails validation. A
   stored invalid `timezone` falls back to UTC

@@ -55,7 +55,14 @@ class CreateOnlyFieldsMixin:
 
 @extend_schema_field({"type": "object", "additionalProperties": True})
 class ObjectJSONField(serializers.JSONField):
-    """JSONField annotated as ``type: object`` for OpenAPI schema generation."""
+    """JSONField annotated as ``type: object`` for OpenAPI schema generation,
+    refusing any other JSON value (read with ``.get`` afterwards)."""
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Must be a JSON object.")
+        return value
 
 
 class ThreadEventUserSerializer(serializers.Serializer):
@@ -1130,7 +1137,7 @@ class ThreadSerializer(serializers.ModelSerializer):
         """Return the IDs of the thread messages, chronologically ordered."""
         cached = getattr(instance, "_ordered_messages", None)
         if cached is None:
-            cached = instance.messages.order_by("created_at")
+            cached = instance.messages.order_by("created_at", "id")
         return [str(message.id) for message in cached]
 
     @extend_schema_field(serializers.IntegerField())
@@ -2718,6 +2725,9 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
 
     def validate_settings(self, value):
         """Validate settings, including tags if present."""
+        # Read with ``.get`` by the authentication and the webhooks.
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Must be a JSON object.")
         if not value:
             return value
 

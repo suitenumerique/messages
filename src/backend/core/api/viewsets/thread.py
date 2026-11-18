@@ -288,7 +288,7 @@ class ThreadViewSet(
                 "messages",
                 queryset=models.Message.objects.only(
                     "id", "thread_id", "created_at", "is_draft", "is_trashed"
-                ).order_by("created_at"),
+                ).order_by("created_at", "id"),
                 to_attr="_ordered_messages",
             ),
             # Feeds ThreadSerializer.get_labels. Labels are scoped to the

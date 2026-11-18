@@ -128,6 +128,20 @@ class TestChannelCreate:
         assert channel.mailbox == mailbox
         assert channel.type == "widget"
 
+    @pytest.mark.parametrize("settings", [["x"], [], "x"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_settings_not_an_object(self, api_client, mailbox, settings):
+        """Settings that are not an object are refused, not a 500 now or
+        when they are read with ``.get`` later."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {"name": "My Widget", "type": "widget", "settings": settings}
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "settings" in response.data
+        assert not models.Channel.objects.filter(name="My Widget").exists()
+
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_with_tags(self, api_client, mailbox):
         """Test creating a widget channel with tags."""

@@ -185,8 +185,8 @@ def check_blob_lifecycle_redis(app_configs, **kwargs):
     ]
 
 
-# Durations subtracted from now (``now - timedelta(...)``): past a few
-# thousand centuries that raises OverflowError, in every run of the task
+# Durations subtracted from now (``now - timedelta(...)``): past about 2000
+# years (before year 1) that raises OverflowError, in every run of the task
 # using it. 100 years is beyond any meaningful value.
 _MAX_DURATION_DAYS = 36500
 _SECONDS_PER_DAY = 86400

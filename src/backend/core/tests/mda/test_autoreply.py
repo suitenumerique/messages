@@ -338,6 +338,11 @@ class TestIsActiveAutoreply:
         autoreply_template.save()
         assert autoreply_template.is_active_autoreply() is True
 
+    @pytest.mark.parametrize("tz", ["localtime", "Factory"])
+    def test_stored_zone_unknown_to_browsers_is_utc(self, tz):
+        """As the frontend reads it: "localtime" would depend on the server."""
+        assert models._autoreply_tz({"timezone": tz}).key == "UTC"  # pylint: disable=protected-access
+
     @pytest.mark.parametrize("tz", [None, 123, "", ["UTC"], "Invalid/Zone", "a" * 300])
     def test_date_range_stored_invalid_timezone(self, autoreply_template, tz):
         """A timezone that slipped past validation (older rows, direct writes)
@@ -492,6 +497,39 @@ class TestIsActiveAutoreply:
                         "start_time": "09:00",
                         "end_day": 1,
                         "end_time": "24:00",
+                    }
+                ],
+                "timezone": "UTC",
+            }
+        )
+        autoreply_template.refresh_from_db()
+        assert autoreply_template.is_active_autoreply(now=now) is expected
+
+    @pytest.mark.parametrize(
+        ("start_day", "end_day", "now", "expected"),
+        [
+            # Mon 24:00 → Tue 08:00 is Tue 00:00 → Tue 08:00.
+            (1, 2, datetime(2026, 3, 2, 12, 0, tzinfo=ZoneInfo("UTC")), False),  # Mon
+            (1, 2, datetime(2026, 3, 3, 7, 0, tzinfo=ZoneInfo("UTC")), True),  # Tue
+            # Sun 24:00 → Mon 08:00 is Mon 00:00 → Mon 08:00 (day 7 wraps).
+            (7, 1, datetime(2026, 3, 8, 12, 0, tzinfo=ZoneInfo("UTC")), False),  # Sun
+            (7, 1, datetime(2026, 3, 2, 7, 0, tzinfo=ZoneInfo("UTC")), True),  # Mon
+        ],
+    )
+    def test_recurring_weekly_stored_start_at_24(
+        self, autoreply_template, start_day, end_day, now, expected
+    ):
+        """An interval stored starting at "24:00" (refused now) starts with
+        the next day, not with the 00:00 of its own."""
+        models.MessageTemplate.objects.filter(pk=autoreply_template.pk).update(
+            metadata={
+                "schedule_type": "recurring_weekly",
+                "intervals": [
+                    {
+                        "start_day": start_day,
+                        "start_time": "24:00",
+                        "end_day": end_day,
+                        "end_time": "08:00",
                     }
                 ],
                 "timezone": "UTC",

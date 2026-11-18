@@ -31,6 +31,7 @@ import useStarred from "@/features/message/use-starred";
 import { Button } from "@gouvfr-lasuite/ui-components";
 import { Tooltip } from "@/features/ui/components/tooltip";
 import { Icon } from "@/features/ui/components/icon";
+import { DateHelper } from "@/features/utils/date-helper";
 
 /**
  * Fallback height (px) used when measuring the sticky action-bar row before
@@ -266,7 +267,7 @@ const ThreadViewComponent = ({ threadItems, mailboxId, thread, showTrashedMessag
             const createdAt = entry.target.getAttribute('data-created-at');
             if (!createdAt) return;
             // Track the most recent message scrolled into view
-            if (!latestSeenDate.current || new Date(createdAt) > new Date(latestSeenDate.current)) {
+            if (!latestSeenDate.current || DateHelper.compareInstants(createdAt, latestSeenDate.current) > 0) {
                 latestSeenDate.current = createdAt;
             }
             debouncedMarkAsRead(thread.id, latestSeenDate.current);

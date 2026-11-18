@@ -459,6 +459,27 @@ class TestReconstructEml:
             1970, 1, 1, tzinfo=timezone.utc
         )
 
+    def test_reconstruct_future_date_falls_back_to_received(self):
+        """A future ``Date:`` with no usable MAPI time takes the topmost
+        ``Received:`` date rather than the epoch, as the inbound step would."""
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        msg = _make_message(
+            transport_headers=(
+                "Received: from relay.example.com (relay.example.com [192.0.2.1])\r\n"
+                "\tby mx.example.org; Tue, 4 Mar 2025 10:20:30 +0100\r\n"
+                "Received: from origin.example.com by relay.example.com;\r\n"
+                " Tue, 4 Mar 2025 09:00:00 +0100\r\n"
+                "From: sender@example.com\r\n"
+                "Subject: Future\r\n"
+                "Date: Thu, 1 Jan 2099 00:00:00 +0000\r\n"
+            ),
+            delivery_time=future,
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2025, 3, 4, 9, 20, 30, tzinfo=timezone.utc
+        )
+
     def test_reconstruct_without_sent_time_uses_creation_time(self):
         """A message with no delivery/submit time (e.g. a draft) is dated by the
         record's creation time instead of the epoch."""

@@ -3459,10 +3459,18 @@ class DKIMKey(BaseModel):
         return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"
 
 
+# Names of the zoneinfo directory that browsers do not know: the frontend
+# reads them as UTC, and "localtime" depends on the server.
+_AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS = frozenset({"localtime", "Factory"})
+
+
 def _autoreply_tz(metadata: dict) -> ZoneInfo:
     """The autoreply's timezone, UTC when absent or invalid."""
+    name = metadata.get("timezone")
+    if isinstance(name, str) and name in _AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS:
+        return ZoneInfo("UTC")
     try:
-        return ZoneInfo(metadata.get("timezone") or "UTC")
+        return ZoneInfo(name or "UTC")
     except (KeyError, ValueError, TypeError, OSError):
         return ZoneInfo("UTC")
 
@@ -3784,7 +3792,9 @@ class MessageTemplate(BaseModel):
         # files of the zoneinfo directory ("posixrules"), and raises OSError
         # on a name too long for a path.
         if tz_name not in (None, "") and (
-            not isinstance(tz_name, str) or tz_name not in available_timezones()
+            not isinstance(tz_name, str)
+            or tz_name not in available_timezones()
+            or tz_name in _AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS
         ):
             raise ValidationError({"metadata": f"Invalid timezone: {tz_name}"})
 
@@ -3830,16 +3840,20 @@ class MessageTemplate(BaseModel):
 
             for interval in intervals:
                 try:
-                    st = time.fromisoformat(interval["start_time"])
-                    # Stored before validation refused it: "24:00" means the
-                    # end of the day, not 00:00.
+                    sd = interval["start_day"]
+                    ed = interval["end_day"]
+                    # Stored before validation refused it, "24:00" is the end
+                    # of the day, not its 00:00: a start then begins with the
+                    # next day, an end ends with this one.
+                    if interval["start_time"] == "24:00":
+                        sd, st = sd % 7 + 1, time.min
+                    else:
+                        st = time.fromisoformat(interval["start_time"])
                     et = (
                         time.max
                         if interval["end_time"] == "24:00"
                         else time.fromisoformat(interval["end_time"])
                     )
-                    sd = interval["start_day"]
-                    ed = interval["end_day"]
                 except (KeyError, ValueError, TypeError):
                     continue
                 start = (sd, st)

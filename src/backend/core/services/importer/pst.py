@@ -1254,6 +1254,13 @@ def reconstruct_eml(
             ),
             None,
         )
+        if timestamp is None and transport_headers:
+            # Then the date the recipient's server stamped (topmost hop), as
+            # the inbound step would: an epoch Date would hide it from there.
+            received = parsed_headers.get_all("Received") or []
+            if received and ";" in str(received[0]):
+                stamped = " ".join(str(received[0]).rsplit(";", 1)[1].split())
+                timestamp = _archive_date(parse_date(stamped))
         if timestamp is not None:
             jmap_data["sentAt"] = timestamp.isoformat()
         else:

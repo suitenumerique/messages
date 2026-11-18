@@ -1,6 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { DateHelper } from "@/features/utils/date-helper";
-import { buildAutoreplyMetadata, startsBeforeEnd } from "./autoreply-schedule";
+import { buildAutoreplyMetadata, intervalFormValues, startsBeforeEnd, timeZoneOptions } from "./autoreply-schedule";
+
+describe("timeZoneOptions", () => {
+    it("lists UTC and the current zone, once", () => {
+        const values = (zones: string[], current: string) => timeZoneOptions(zones, current).map((o) => o.value);
+        expect(values(["Asia/Calcutta", "Europe/Paris"], "Asia/Kolkata")).toEqual([
+            "UTC",
+            "Asia/Calcutta",
+            "Europe/Paris",
+            "Asia/Kolkata",
+        ]);
+        expect(values(["Europe/Paris", "UTC"], "Europe/Paris")).toEqual(["UTC", "Europe/Paris"]);
+    });
+});
+
+describe("intervalFormValues", () => {
+    const interval = (start_day: number, start_time: string, end_day: number, end_time: string) =>
+        intervalFormValues({ start_day, start_time, end_day, end_time });
+
+    it("keeps valid times", () => {
+        expect(interval(1, "09:00", 5, "17:00")).toEqual({
+            interval_start_day: "1",
+            interval_start_time: "09:00",
+            interval_end_day: "5",
+            interval_end_time: "17:00",
+        });
+        expect(intervalFormValues(undefined).interval_start_day).toBe("");
+    });
+
+    it("reads a stored 24:00 as 00:00 of the next day, as the backend does", () => {
+        expect(interval(7, "24:00", 1, "08:00")).toMatchObject({ interval_start_day: "1", interval_start_time: "00:00" });
+        expect(interval(1, "09:00", 1, "24:00")).toMatchObject({ interval_end_day: "2", interval_end_time: "00:00" });
+        expect(interval(1, "09:00", 7, "24:00")).toMatchObject({ interval_end_day: "1", interval_end_time: "00:00" });
+    });
+
+    it("ends a whole week at 23:59 rather than at its start", () => {
+        expect(interval(1, "00:00", 7, "24:00")).toMatchObject({ interval_end_day: "7", interval_end_time: "23:59" });
+    });
+});
 
 describe("startsBeforeEnd", () => {
     const range = (start_at: string, end_at: string, timezone = "Europe/Paris") => ({
@@ -19,6 +57,16 @@ describe("startsBeforeEnd", () => {
         // 02:30 does not exist on 2026-03-29 in Paris: read as 01:30Z (CET),
         // after 03:10 CEST (01:10Z).
         expect(startsBeforeEnd(range("2026-03-29T02:30", "2026-03-29T03:10"), "Europe/Paris")).toBe(false);
+    });
+
+    it("reads the years before 100 as written", () => {
+        expect(startsBeforeEnd(range("0099-06-01T10:00", "1950-01-01T00:00", "UTC"), "UTC")).toBe(true);
+    });
+
+    it("reads an offset with seconds, as Python writes one", () => {
+        // 10:00:00+00:00:30 is 09:59:30Z, before 09:59:45Z.
+        expect(startsBeforeEnd(range("2026-06-01T10:00:00+00:00:30", "2026-06-01T09:59:45Z", "UTC"), "UTC")).toBe(true);
+        expect(startsBeforeEnd(range("2026-06-01T10:00:00-00:00:30", "2026-06-01T10:00:15Z", "UTC"), "UTC")).toBe(false);
     });
 
     it("leaves unreadable values to the backend", () => {
@@ -87,6 +135,20 @@ describe("buildAutoreplyMetadata", () => {
         );
         expect(built.end_at).toBe(storedEnd);
         expect(new Date(built.end_at as string).toISOString()).toBe("2026-10-25T01:30:00.000Z");
+    });
+
+    it("sends a bound reverted by the input (seconds dropped) back as stored", () => {
+        // A datetime-local input reports 02:30:00 as 02:30.
+        const built = buildAutoreplyMetadata(
+            {
+                schedule_type: "date_range",
+                start_at: origin.startInput,
+                end_at: "2026-10-25T02:30",
+                timezone: "Europe/Paris",
+            },
+            origin,
+        );
+        expect(built.end_at).toBe(storedEnd);
     });
 
     it("sends an edited bound as its wall-clock time", () => {

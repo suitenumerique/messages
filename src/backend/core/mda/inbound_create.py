@@ -241,7 +241,8 @@ def _received_at_utc(parsed_email: JmapEmail) -> datetime.datetime | None:
     """The date of the topmost ``Received:`` header in UTC, or None.
 
     That hop is the one that reached the recipient's own server, which
-    stamped it: trusted more than the sender's ``Date:``.
+    stamped it: the fallback of an import whose ``Date:`` is unusable or in
+    the future (see ``_message_date``).
     """
     received = find_headers(parsed_email, "Received")
     if not received or ";" not in received[0]:

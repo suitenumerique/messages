@@ -11,6 +11,7 @@ properties before PUTing to the CalDAV server.
 import copy
 import re
 from datetime import date, datetime, timezone
+from datetime import time as dt_time
 
 from icalendar import Calendar as ICalendar
 from icalendar import Event as ICalEvent
@@ -240,6 +241,14 @@ def _rebuild_event(src):
     # occurrence or show a cancelled one.
     if "UID" not in fresh or "DTSTART" not in fresh or recurrence_dropped:
         return None
+    rules = fresh.get("RRULE")
+    if rules is not None:
+        rules = rules if isinstance(rules, list) else [rules]
+        kept = [r for r in rules if _subhourly_until_is_small(r, fresh["DTSTART"].dt)]
+        if len(kept) != len(rules):
+            del fresh["RRULE"]
+            for rule in kept:
+                fresh.add("RRULE", rule, encode=0)
     stamp = fresh.get("DTSTAMP")
     if stamp is not None and not isinstance(stamp.dt, datetime):
         # RFC 5545 §3.8.7.2: a DTSTAMP is a UTC date-time.
@@ -307,11 +316,47 @@ def _clean_property_value(prop, value):
         except Exception:  # pylint: disable=broad-exception-caught
             return None
         if str(freq).upper() in _RRULE_FREQ_REQUIRES_BOUND:
-            # UNTIL bounds nothing (it can be year 9999): only a small
-            # COUNT keeps the expansion small.
+            # A small COUNT keeps the expansion small. An UNTIL alone (it can
+            # be year 9999) is checked against DTSTART in ``_rebuild_event``.
+            if count is None and value.get("UNTIL"):
+                return value
             if not isinstance(count, int) or not 0 < count <= _SUBHOURLY_MAX_COUNT:
                 return None
     return value
+
+
+def _subhourly_until_is_small(rule, dtstart):
+    """Whether a sub-hourly ``rule`` bounded by UNTIL alone has at most
+    ``_SUBHOURLY_MAX_COUNT`` occurrences from ``dtstart``. True for any other
+    rule (already checked by ``_clean_property_value``).
+
+    Counted, not expanded: expanding a rule whose BY* parts rarely match
+    walks every second or minute until UNTIL.
+    """
+    try:
+        freq = str((rule.get("FREQ") or [""])[0]).upper()
+        if freq not in _RRULE_FREQ_REQUIRES_BOUND or rule.get("COUNT"):
+            return True
+        interval = (rule.get("INTERVAL") or [1])[0]
+        until = rule["UNTIL"][0]
+        if not isinstance(interval, int) or interval < 1:
+            return False
+        start = (
+            dtstart
+            if isinstance(dtstart, datetime)
+            else datetime.combine(dtstart, dt_time.min)
+        )
+        if not isinstance(until, datetime):
+            until = datetime.combine(until, dt_time.max)
+        span = (until - start).total_seconds()
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Unreadable, or a naive UNTIL with an aware DTSTART (or the reverse).
+        return False
+    step = interval * (60 if freq == "MINUTELY" else 1)
+    steps = max(span, 0) // step + 1
+    # MINUTELY expands BYSECOND (RFC 5545 §3.3.10); the other BY* only limit.
+    per_step = len(rule.get("BYSECOND") or [0]) if freq == "MINUTELY" else 1
+    return steps * per_step <= _SUBHOURLY_MAX_COUNT
 
 
 def _filter_params(prop, value):

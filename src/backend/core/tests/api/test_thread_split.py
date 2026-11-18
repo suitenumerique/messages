@@ -504,6 +504,40 @@ def test_split_thread_parent_references_fixed(api_client):
     assert msg3.parent_id == msg2.id
 
 
+def test_split_thread_sharing_a_date_cuts_in_display_order(api_client):
+    """The thread view lists messages sharing a date in the order the split
+    cuts: splitting at the second one shown keeps the first one shown."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    same = timezone.now() - timedelta(days=1)
+    # Stored in decreasing id order: the table order differs from the cut's.
+    for index in range(4):
+        message = MessageFactory(
+            thread=thread,
+            sender=contact,
+            id=uuid.UUID(int=(4 - index) << 64),
+        )
+        type(message).objects.filter(pk=message.pk).update(created_at=same)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.get(
+        reverse("messages-list"),
+        {"thread_id": str(thread.id), "mailbox_id": str(mailbox.id)},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    shown = [item["id"] for item in response.data]
+
+    response = api_client.post(_get_split_url(thread.id), {"message_id": shown[1]})
+    assert response.status_code == status.HTTP_201_CREATED
+
+    new_thread = Thread.objects.get(pk=response.data["id"])
+    moved = {str(pk) for pk in new_thread.messages.values_list("id", flat=True)}
+    assert moved == set(shown[1:])
+
+
 def test_split_thread_kept_message_with_moved_parent(api_client):
     """Out of order dates (imports): a kept message whose parent moves loses
     the link too; links within each side stay."""
