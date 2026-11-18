@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import connection, transaction
 from django.db.models import Count, Max, Q
 from django.middleware.csrf import get_token
+from django.utils import timezone
 
 from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema_field
 from rest_framework import serializers
@@ -888,6 +889,60 @@ class ContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Contact
         fields = ["id", "name", "email"]
+
+
+class ContactSuggestionSerializer(ContactSerializer):
+    """Serialize a contact offered as a recipient suggestion."""
+
+    is_suggested = serializers.SerializerMethodField()
+    can_change_suggestion = serializers.SerializerMethodField()
+
+    def get_is_suggested(self, obj) -> bool:
+        """Tell whether the contact is suggested to the selected mailbox.
+
+        A contact listed through the domain of the selected mailbox belongs to
+        another mailbox: whether that one hid it does not matter here.
+        """
+        selected_mailbox_id = self.context.get("selected_mailbox_id")
+        if selected_mailbox_id and obj.mailbox_id != selected_mailbox_id:
+            return True
+        return obj.is_suggested
+
+    def get_can_change_suggestion(self, obj) -> bool:
+        """Tell whether the current user can hide or show this suggestion."""
+        return obj.mailbox_id in self.context["editable_mailbox_ids"]
+
+    class Meta(ContactSerializer.Meta):
+        fields = [
+            *ContactSerializer.Meta.fields,
+            "is_suggested",
+            "can_change_suggestion",
+        ]
+        read_only_fields = fields
+
+
+class ContactSuggestionUpdateSerializer(serializers.Serializer):
+    """Validate and apply a change to whether a contact is suggested."""
+
+    is_suggested = serializers.BooleanField()
+
+    def create(self, validated_data):
+        """Do not allow creating instances from this serializer."""
+        raise RuntimeError(f"{self.__class__.__name__} does not support create method")
+
+    def update(self, instance, validated_data):
+        """Store the flag without going through ``save()``.
+
+        Its full_clean() would reject a contact stored before the address
+        validator tightened, and these are precisely the ones a user wants to
+        get rid of.
+        """
+        if "is_suggested" in validated_data:
+            instance.is_suggested = validated_data["is_suggested"]
+            models.Contact.objects.filter(pk=instance.pk).update(
+                is_suggested=instance.is_suggested, updated_at=timezone.now()
+            )
+        return instance
 
 
 class BlobSerializer(serializers.ModelSerializer):

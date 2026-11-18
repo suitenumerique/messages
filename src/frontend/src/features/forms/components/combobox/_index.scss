@@ -1,3 +1,5 @@
+@use "../../../../styles/utils" as *;
+
 .c__combobox {
   position: relative;
 
@@ -166,15 +168,39 @@
   margin: 0;
 
   &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--xs);
     padding: var(--c--globals--spacings--sm);
     font-size: var(--c--components--forms-select--item-font-size);
     color: var(--c--components--forms-select--item-color);
     cursor: pointer;
+    // A long press opens the option's context menu: not the browser's own
+    // callout or a text selection.
+    @include no-touch-link-menu;
+
+    &__action {
+      flex-shrink: 0;
+      visibility: hidden;
+      // Not the visibility the ui-kit button transitions too, which would
+      // keep it shown a while on a row no longer highlighted.
+      transition-property: background-color, border-color, color;
+
+      // Without a mouse, a long press on the option reaches the action.
+      @media (hover: none) {
+        display: none;
+      }
+    }
 
     &--highlight {
       background-color: var(
         --c--components--forms-select--item-background-color--hover
       );
+
+      .c__combobox__menu__item__action {
+        visibility: visible;
+      }
     }
 
     &--selected {
@@ -186,6 +212,24 @@
     &--disabled {
       color: var(--c--components--forms-select--item-color--disabled);
       cursor: default;
+    }
+  }
+
+  &__section {
+    border-top: 1px solid
+      var(--c--contextuals--border--semantic--neutral--tertiary);
+
+    &__title {
+      display: block;
+      padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm) 0;
+      font-size: var(--c--globals--font--sizes--xs);
+      color: var(--c--contextuals--content--semantic--neutral--secondary);
+    }
+
+    &__options {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
     }
   }
 }

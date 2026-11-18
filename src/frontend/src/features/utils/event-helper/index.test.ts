@@ -52,4 +52,21 @@ describe('EventHelper', () => {
             expect(event.preventDefault).not.toHaveBeenCalled();
         });
     });
+
+    describe('isApplePlatform', () => {
+        afterEach(() => {
+            vi.restoreAllMocks();
+        });
+
+        it.each([
+            ['macOS', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15', true],
+            ['iOS', 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148', true],
+            ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36', false],
+            ['Linux', 'Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0', false],
+            ['Android', 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36', false],
+        ])('should tell %s apart', (_platform, userAgent, expected) => {
+            vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(userAgent);
+            expect(EventHelper.isApplePlatform()).toBe(expected);
+        });
+    });
 });

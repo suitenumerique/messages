@@ -19,6 +19,16 @@ class EventHelper {
             event.preventDefault();
         }
     }
+
+    /**
+     * Tells whether the user is on an Apple device, whose keyboards mostly
+     * lack a forward delete key: their ⌫ key raises `Backspace`. iPadOS
+     * presents itself as a Mac.
+     * @returns true on macOS, iOS and iPadOS.
+     */
+    static isApplePlatform(): boolean {
+        return /Macintosh|Mac OS X|iPhone|iPad|iPod/.test(navigator.userAgent);
+    }
 }
 
 export default EventHelper;

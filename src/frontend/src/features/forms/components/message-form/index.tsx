@@ -7,7 +7,8 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, Mailbox, Message, sendCreateResponse200, Thread, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate, ThreadAccessRoleChoices } from "@/features/api/gen";
+import { Attachment, DraftMessageRequestRequest, draftCreateResponse200, getContactsListQueryKey, Mailbox, Message, sendCreateResponse200, Thread, useDraftCreate, useDraftUpdate2, useMessagesDestroy, useSendCreate, ThreadAccessRoleChoices } from "@/features/api/gen";
+import { useQueryClient } from "@tanstack/react-query";
 import { MessageComposer, MessageComposerHandle, QuoteType } from "@/features/forms/components/message-composer";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import MailHelper, { SUBJECT_MAX_LENGTH, UNICODE_EMAIL_REGEX } from "@/features/utils/mail-helper";
@@ -240,6 +241,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         effectiveMailbox?.email;
     const hideFromField = defaultSenderId && availableMailboxes.length === 1;
     const { addQueuedMessage } = useSentBox();
+    const queryClient = useQueryClient();
 
     const getMailboxOptions = () => {
         return availableMailboxes.map((mailbox) => ({
@@ -498,6 +500,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     );
                 }
                 addQueuedMessage(data.task_id);
+                // Its recipients are now suggested, whatever mailbox sent it.
+                // Not refetched right away: this composer is about to close,
+                // the next one will refetch the stale list when it mounts.
+                queryClient.invalidateQueries({ queryKey: getContactsListQueryKey(), refetchType: "none" });
                 onSuccess?.();
             }
         }

@@ -1,12 +1,15 @@
 import { Field, LabelledBox, SelectProps } from "@gouvfr-lasuite/ui-components";
 import clsx from "clsx";
 import { useCombobox, useMultipleSelection } from "downshift"
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Chip } from "./chip";
 import { Button, Option } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
 import { Popover } from "react-aria-components";
+import { ComboBoxOptionAction, useOptionActions } from "./use-option-actions";
+
+export type { ComboBoxOptionAction } from "./use-option-actions";
 
 // react-aria lowers it to the room left on the side the menu opens to.
 const MENU_MAX_HEIGHT = 320;
@@ -30,6 +33,19 @@ export type ComboBoxProps =  {
      */
     getItemWarning?: (value: string) => string | undefined,
     /**
+     * Action offered on a menu option: a button for a mouse, a shortcut for
+     * the keyboard, a context menu opened by a long press for a finger (see
+     * `useOptionActions`). The focus goes back to the input once it resolves,
+     * as it may have opened a modal. Return nothing for options without
+     * action.
+     */
+    getOptionAction?: (option: Option) => ComboBoxOptionAction | undefined,
+    /**
+     * Options offered under their own title once no main option is left to
+     * offer, and picked the same way.
+     */
+    fallbackSection?: { title: string, options: Option[] },
+    /**
      * "floating" (default) animates the label above the value, like the
      * ui-kit Select. "inline" puts the label in a left column and the field
      * in a right column, on the same grid as the ui-kit inline fields.
@@ -51,7 +67,8 @@ export const ComboBox = (props: ComboBoxProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     // `className` is merged into the root classes below instead of being
     // spread, otherwise a caller-provided value would replace `c__combobox`.
-    const { valueTransformer, getItemWarning, className, variant = "floating", actions, ...fieldProps } = props;
+    const { valueTransformer, getItemWarning, getOptionAction, fallbackSection, className, variant = "floating", actions, ...fieldProps } = props;
+    const fallbackSectionTitleId = useId();
     const inline = variant === "inline";
     const canonical = useCallback(
         (value: string): string => (valueTransformer ? valueTransformer(value) : value),
@@ -104,19 +121,34 @@ export const ComboBox = (props: ComboBoxProps) => {
             return { ...state, ...changes }
         },
     })
-    const filteredOptions = useMemo(() => {
+    const withoutSelected = useCallback((options: Option[]): Option[] => {
         // Compare on the transformed value: a stored contact whose address
         // differs only by what the transformer canonicalizes (e.g. domain
         // case) would otherwise stay offered after being picked, and could be
         // added a second time.
         const selected = new Set(selectedItems.map(item => item.value || item.label));
-        // Limit the options list to 10 items to avoid performance issues
-        return props.options.filter(option => {
+        return options.filter(option => {
             const raw = option.value ?? option.label;
             // An option carrying no string value cannot match a selected chip.
             return typeof raw !== 'string' || !selected.has(canonical(raw));
-        }).slice(0, 10);
-    }, [props.options, selectedItems, canonical])
+        });
+    }, [selectedItems, canonical]);
+    // Limit the options list to 10 items to avoid performance issues
+    const filteredOptions = useMemo(
+        () => withoutSelected(props.options).slice(0, 10),
+        [props.options, withoutSelected]
+    );
+    // Judged after the selected chips are left out: main options that are all
+    // picked already leave nothing to offer.
+    const fallbackOptions = useMemo(
+        () => filteredOptions.length > 0 ? [] : withoutSelected(fallbackSection?.options ?? []),
+        [filteredOptions.length, fallbackSection?.options, withoutSelected]
+    );
+    // Downshift numbers the options of both sections in a single sequence.
+    const menuItems = useMemo(
+        () => [...filteredOptions, ...fallbackOptions],
+        [filteredOptions, fallbackOptions]
+    );
     const showLabelAsPlaceholder = useMemo(
         () => selectedItems.length === 0 && !inputValue && !inputFocused,
         [inputFocused, inputValue, selectedItems]
@@ -131,6 +163,16 @@ export const ComboBox = (props: ComboBoxProps) => {
         return false;
     }
 
+    // Before useCombobox, whose state reducer asks it whether to ignore a
+    // blur, also while React replays that reducer during render. `openMenu`
+    // only runs once an action is done, long after this render.
+    const optionActions = useOptionActions({
+        getOptionAction,
+        menuItems,
+        inputRef,
+        openMenu: () => openMenu(),
+    });
+
     const {
         getInputProps,
         getItemProps,
@@ -140,10 +182,17 @@ export const ComboBox = (props: ComboBoxProps) => {
         highlightedIndex,
         selectedItem,
         closeMenu,
+        openMenu,
     } = useCombobox(
         {
-            items: filteredOptions,
+            items: menuItems,
             itemToString: (item) => item?.label || item?.value || '',
+            stateReducer: (state, { type, changes }) => {
+                if (type === useCombobox.stateChangeTypes.InputBlur && optionActions.ignoresInputBlur()) {
+                    return state;
+                }
+                return changes;
+            },
             onSelectedItemChange: ({ selectedItem }) => {
                 if (!selectedItem) return;
                 // Menu entries come from stored contacts, which keep the case
@@ -172,9 +221,9 @@ export const ComboBox = (props: ComboBoxProps) => {
                 ref: inputRef,
                 size: 4,
                 value: inputValue,
-                onBlurCapture: extractNewItemsIfNeeded,
-                onBlur: () => { setInputFocused(false) },
-                onFocus: () => { setInputFocused(true) },
+                onBlurCapture: () => {
+                    if (!optionActions.ignoresInputBlur()) extractNewItemsIfNeeded();
+                },
                 onChange: (e) => {
                     // Synchronously update the input value
                     // This is important to avoid cursor jumping to the end of the input
@@ -182,6 +231,10 @@ export const ComboBox = (props: ComboBoxProps) => {
                     setInputValue((e.target as HTMLInputElement).value);
                 },
                 onKeyDown: (e) => {
+                    // The focus stays in the input, out of reach of the
+                    // action buttons: the highlighted option's action gets a
+                    // shortcut, announced on the option.
+                    optionActions.handleKeyDown(e, { isMenuOpen: isOpen, highlightedIndex });
                     if (e.key === 'Tab') {
                         if (inputValue.length > 0) {
                             const created = extractNewItemsIfNeeded();
@@ -216,11 +269,45 @@ export const ComboBox = (props: ComboBoxProps) => {
         props.onChange?.(selectedItems.map(item => item.value || item.label));
     }, [selectedItems]);
 
+    // Native listeners, as React drops the focus events fired during a commit:
+    // react-modal gives the focus back to the input while unmounting, so a
+    // React onFocus would never tell the menu it may open again.
+    useEffect(() => {
+        const input = inputRef.current;
+        if (!input) return;
+        const handleFocus = () => setInputFocused(true);
+        const handleBlur = () => setInputFocused(false);
+        input.addEventListener("focus", handleFocus);
+        input.addEventListener("blur", handleBlur);
+        return () => {
+            input.removeEventListener("focus", handleFocus);
+            input.removeEventListener("blur", handleBlur);
+        };
+    }, []);
+
     useEffect(() => {
         if (props.autoFocus) inputRef.current?.focus();
     }, [props.autoFocus]);
 
     const labelProps = getLabelProps();
+    const renderMenuItem = (item: Option, index: number) => {
+        const { itemProps: actionItemProps, button: actionButton } = optionActions.getOptionActionProps(item, index);
+        return (
+            <li
+                className={clsx("c__combobox__menu__item", {
+                    "c__combobox__menu__item--highlight": highlightedIndex === index,
+                    "c__combobox__menu__item--selected": selectedItem === item,
+                })}
+                key={item.value}
+                {...getItemProps({item, index})}
+                data-option-index={index}
+                {...actionItemProps}
+            >
+                {item.render?.() || <span>{item.label}</span>}
+                {actionButton}
+            </li>
+        );
+    };
     const valueRow = (
         <div className="c__combobox__value">
             {selectedItems.map((selectedItem, index) => (
@@ -320,25 +407,28 @@ export const ComboBox = (props: ComboBoxProps) => {
                 <Popover
                     className="c__combobox__popover"
                     triggerRef={wrapperRef}
-                    isOpen={isOpen && inputFocused && filteredOptions.length > 0}
+                    isOpen={isOpen && (inputFocused || optionActions.keepsMenuDisplayed) && menuItems.length > 0}
                     onOpenChange={(open) => { if (!open) closeMenu(); }}
                     isNonModal
                     placement="bottom start"
                     maxHeight={MENU_MAX_HEIGHT}
                 >
-                    <ul className="c__combobox__menu" {...getMenuProps({}, { suppressRefError: true })}>
-                        {filteredOptions.map((item, index) => (
-                            <li
-                                className={clsx("c__combobox__menu__item", {
-                                    "c__combobox__menu__item--highlight": highlightedIndex === index,
-                                    "c__combobox__menu__item--selected": selectedItem === item,
-                                })}
-                                key={item.value}
-                                {...getItemProps({item, index})}
-                            >
-                                {item.render?.() || <span>{item.label}</span>}
+                    <ul
+                        className="c__combobox__menu"
+                        {...getMenuProps(optionActions.menuTouchHandlers, { suppressRefError: true })}
+                    >
+                        {filteredOptions.map((item, index) => renderMenuItem(item, index))}
+                        {fallbackSection && fallbackOptions.length > 0 && (
+                            // Pressing the title must not move the focus out of the input.
+                            <li role="presentation" className="c__combobox__menu__section" onMouseDown={(e) => e.preventDefault()}>
+                                <span id={fallbackSectionTitleId} className="c__combobox__menu__section__title">
+                                    {fallbackSection.title}
+                                </span>
+                                <ul role="group" aria-labelledby={fallbackSectionTitleId} className="c__combobox__menu__section__options">
+                                    {fallbackOptions.map((item, index) => renderMenuItem(item, filteredOptions.length + index))}
+                                </ul>
                             </li>
-                        ))}
+                        )}
                     </ul>
                 </Popover>
             </div>
