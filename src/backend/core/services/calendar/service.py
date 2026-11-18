@@ -805,7 +805,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's stored event.
 
         Mirror of ``respond_to_event``. Only ever modifies the ATTENDEE matching
-        ``attendee_email`` (the caller's DMARC-verified sender), reading its
+        ``attendee_email`` (the caller's authenticated sender), reading its
         PARTSTAT from that same entry — so a crafted multi-ATTENDEE payload can't
         move a third party. When ``organizer_email`` is given, only a stored copy
         whose ORGANIZER matches it is updated — so a same-UID copy on which the

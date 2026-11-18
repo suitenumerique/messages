@@ -30,7 +30,6 @@ from core.mda.dispatch_webhooks import (
     load_cached_webhook_results,
     persist_cached_webhook_results,
 )
-from core.mda.inbound_auth import inbound_auth_enabled
 from core.mda.inbound_create import (
     _create_message_from_inbound,
     _record_divergent_rcpt,
@@ -551,12 +550,13 @@ def process_inbound_message_task(self, inbound_message_id: str):
             and not ctx.is_spam
             and not deferral_expired
         ):
-            # Absent verdict = "verified" ONLY when inbound auth actually ran
-            # with a supported mode. check_inbound_authentication also returns
-            # nothing when DKIM/DMARC is disabled (or the mode is a typo) —
-            # downgrade to unverifiable so such a deployment can't be spoofed.
+            # An absent verdict is not sufficient to write to a calendar: it
+            # does not prove the From address. Internal mail comes from an
+            # authenticated mailbox. Other mail needs an aligned From.
             auth_verdict = ctx.postmark.get("auth")
-            if auth_verdict is None and not inbound_auth_enabled(ctx.spam_config):
+            if auth_verdict is None and not (
+                inbound_message.is_internal or ctx.from_authenticated
+            ):
                 auth_verdict = "none"
             ics, itip_flag, attendee = itip.evaluate_inbound_reply(
                 ctx.parsed_email,

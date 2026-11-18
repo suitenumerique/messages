@@ -21,10 +21,12 @@ import radicale.config
 import requests
 import requests.adapters
 from icalendar import Calendar as ICalendar
+from jmap_email import parse_email
 from rest_framework.test import APIClient
 
 from core import factories, models
-from core.enums import ChannelTypes, MailboxRoleChoices
+from core.enums import ChannelTypes, InboundOrigin, MailboxRoleChoices
+from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_tasks import _enqueue_itip_reply
 from core.services.calendar.ics_rebuild import rebuild_for_storage
 from core.services.calendar.service import CalDAVError, CalDAVService
@@ -3306,6 +3308,79 @@ class TestApplyReplyInboundE2E:
         self._deliver(str(mailbox), uid)
 
         assert self._partstat(calendar_url, uid) == "NEEDS-ACTION"
+
+    @pytest.mark.parametrize(
+        "symbols, expected",
+        [
+            # Another domain signed the message and the From domain has no
+            # DMARC policy. The message shows as verified, but the From address
+            # is not proven.
+            (
+                {"R_DKIM_ALLOW": {"options": ["attacker.example:s=mail"]}},
+                "NEEDS-ACTION",
+            ),
+            ({"R_DKIM_ALLOW": {"options": ["corp.example:s=mail"]}}, "ACCEPTED"),
+            (
+                {
+                    "R_DKIM_ALLOW": {"options": ["esp.example:s=mail"]},
+                    "DMARC_POLICY_ALLOW": {"score": -0.5},
+                },
+                "ACCEPTED",
+            ),
+        ],
+    )
+    def test_rspamd_reply_needs_an_aligned_from(
+        self,
+        settings,
+        mailbox,
+        caldav_channel,
+        radicale_with_calendar,
+        symbols,
+        expected,
+    ):
+        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.SPAM_CONFIG = {"inbound_auth": "rspamd"}
+        calendar_url, put_event = radicale_with_calendar
+        uid = "e2e-aligned@example.com"
+        self._seed(put_event, uid, str(mailbox))
+
+        with mock.patch(
+            "core.mda.spam.call_rspamd",
+            return_value=("no action", None, {"symbols": symbols}),
+        ):
+            self._deliver(str(mailbox), uid)
+
+        assert self._partstat(calendar_url, uid) == expected
+
+    def test_internal_reply_applies_without_inbound_auth(
+        self, settings, mailbox, caldav_channel, radicale_with_calendar
+    ):
+        # Mail from a mailbox of the same instance skips the sender checks:
+        # the sender is an authenticated mailbox.
+        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.SPAM_CONFIG = {}
+        calendar_url, put_event = radicale_with_calendar
+        uid = "e2e-internal@example.com"
+        self._seed(put_event, uid, str(mailbox))
+        eml = _INBOUND_REPLY_EML.format(
+            attendee=self.ATTENDEE,
+            recipient=str(mailbox),
+            token=uuid.uuid4().hex,
+            uid=uid,
+            partstat="ACCEPTED",
+        ).encode("utf-8")
+
+        assert deliver_inbound_message(
+            str(mailbox),
+            parse_email(eml),
+            eml,
+            envelope={"origin": InboundOrigin.INTERNAL},
+            blob=models.Blob.objects.create_blob(
+                content=eml, content_type="message/rfc822"
+            ),
+        )
+
+        assert self._partstat(calendar_url, uid) == "ACCEPTED"
 
     def test_forged_reply_delivered_but_not_applied(
         self, settings, mailbox, caldav_channel, radicale_with_calendar

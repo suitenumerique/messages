@@ -253,19 +253,61 @@ def trusted_arc_sealers(spam_config: dict[str, Any]) -> set[str]:
     }
 
 
-_SUPPORTED_INBOUND_AUTH_MODES = frozenset(
-    {"native", "rspamd", "arc", "authentication-results"}
-)
+def _rspamd_dkim_domains(rspamd_result: dict[str, Any] | None) -> set[str]:
+    """Return the domains that have a valid DKIM signature, per rspamd.
 
-
-def inbound_auth_enabled(spam_config: dict[str, Any]) -> bool:
-    """Whether inbound auth is configured with a *supported* mode.
-
-    Stricter than ``get_inbound_auth_mode`` truthiness: an unknown value (a
-    typo like ``"nativ"``) makes ``check_inbound_authentication`` return None
-    (= verified), so callers gating on "did auth run" must exclude it.
+    Rspamd lists them as the options of ``R_DKIM_ALLOW``, in the form
+    ``domain:s=selector``.
     """
-    return get_inbound_auth_mode(spam_config) in _SUPPORTED_INBOUND_AUTH_MODES
+    symbols = (rspamd_result or {}).get("symbols")
+    if not isinstance(symbols, dict):
+        return set()
+    symbol = symbols.get("R_DKIM_ALLOW")
+    options = symbol.get("options") if isinstance(symbol, dict) else None
+    if not isinstance(options, list):
+        return set()
+    return {
+        normalize_domain(str(option).split(":", 1)[0].rstrip(".")) for option in options
+    }
+
+
+def from_is_authenticated(
+    parsed_email: JmapEmail,
+    spam_config: dict[str, Any],
+    verdict: str | None,
+    rspamd_result: dict[str, Any] | None = None,
+    arc: dict[str, Any] | None = None,
+) -> bool:
+    """Tell if the checks prove that the From domain sent the message.
+
+    ``verdict`` is the result of ``check_inbound_authentication`` for the same
+    message. A verified verdict is not sufficient proof. Outside native mode,
+    it accepts a valid DKIM signature from any domain when the From domain
+    publishes no DMARC policy. This function also requires alignment: DMARC
+    passes, or the From domain itself signed the message.
+
+    Returns False when inbound authentication is disabled or the mode is
+    unknown.
+    """
+    if verdict is not None:
+        return False
+    mode = get_inbound_auth_mode(spam_config)
+    if mode == "native":
+        # Native mode gives a verified verdict only to an aligned signature.
+        return True
+    if mode == "rspamd":
+        if _rspamd_outcome("dmarc", rspamd_result) == _PASS:
+            return True
+        from_domain = _from_header_domain(parsed_email)
+        return bool(from_domain) and from_domain in _rspamd_dkim_domains(rspamd_result)
+    if mode == "arc":
+        ar_values = [arc["aar"]] if arc and arc["trusted"] and arc["aar"] else []
+        return _ar_outcome("dmarc", ar_values) == _PASS
+    if mode == "authentication-results":
+        trusted_relays = int(spam_config.get("trusted_relays", 0))
+        ar_values = _authentication_results_values(parsed_email, trusted_relays)
+        return _ar_outcome("dmarc", ar_values) == _PASS
+    return False
 
 
 def check_inbound_authentication(

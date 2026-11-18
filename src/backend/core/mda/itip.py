@@ -136,7 +136,7 @@ def decide(auth_verdict, apply_unverified):
 def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
     """Detect + gate an inbound REPLY → ``(ics, flag, attendee)`` or all-None.
 
-    ``attendee`` is the DMARC-verified From — the only identity the apply path
+    ``attendee`` is the authenticated From — the only identity the apply path
     may act on. Requiring it to be an ATTENDEE with a PARTSTAT blocks a crafted
     reply whose aligned From is PARTSTAT-less while another ATTENDEE carries one.
     """
