@@ -739,6 +739,8 @@ automated through a DNS provider.
 | `CALDAV_DEFAULT_URL` | None | Base URL of the external CalDAV server. | Optional |
 | `CALDAV_DEFAULT_WEB_URL` | None | URL of the calendar web UI surfaced to the frontend. | Optional |
 | `CALDAV_DEFAULT_PASSWORD` | None | Credential for the default CalDAV account. | Optional |
+| `CALENDAR_ITIP_REPLY_ENABLED` | `False` | Apply the calendar replies (iTIP `REPLY`) received by email to the organizer's event on the CalDAV server. The sender must be authenticated: set `inbound_auth` in `SPAM_CONFIG` (see [spam.md](./spam.md)). DMARC must pass, or the `From` domain must sign the message. | Optional |
+| `CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED` | `False` | Also apply the replies whose sender is not authenticated. A reply that fails DMARC is never applied. Enable only where the `From` address cannot be forged. | Optional |
 
 ### Entitlements
 
