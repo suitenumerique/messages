@@ -24,6 +24,9 @@ and this project adheres to
   `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
 - Add `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` to show the La Suite services button
   in the account console header of the `lst-dsfr` theme
+- Apply the calendar replies (iTIP `REPLY`) received by email to the
+  organizer's event on the CalDAV server, when `CALENDAR_ITIP_REPLY_ENABLED`
+  is set (off by default)
 
 ### Changed
 
