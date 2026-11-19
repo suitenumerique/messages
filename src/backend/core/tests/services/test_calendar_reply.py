@@ -3,6 +3,8 @@
 
 from unittest import mock
 
+from django.core.cache import cache
+
 import pytest
 from icalendar import Calendar as ICalendar
 
@@ -239,6 +241,101 @@ def test_parse_does_not_match_a_letter_that_lowers_to_ascii():
 
 
 RESOURCE = "http://caldav.example/cal/series.ics"
+
+
+def _apply_to_resource(ics, stored, received_at=None, put=None):
+    """Apply a REPLY to a stored resource. Return the result and the PUT mock."""
+    service = CalDAVService(url="http://caldav.example/")
+    reply, _reason = CalDAVService._parse_reply(ics, ATTENDEE)
+    reply["received_at"] = received_at
+    with mock.patch.object(service, "_put_resource", side_effect=put) as put_mock:
+        result = service._apply_reply_to_resource(RESOURCE, stored, '"1"', reply)
+    return result, put_mock
+
+
+@pytest.fixture(name="reply_order")
+def fixture_reply_order():
+    """Start and end with no recorded reply."""
+    cache.clear()
+    yield
+    cache.clear()
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_old_reply_does_not_change_a_newer_answer():
+    stored = ICalendar.from_ical(SERIES)
+    _apply_to_resource(_reply((None, "DECLINED", 0)), stored, received_at=200.0)
+
+    result, put = _apply_to_resource(
+        _reply((None, "ACCEPTED", 0)), stored, received_at=100.0
+    )
+
+    assert result == {"applied": False, "reason": "superseded"}
+    assert put.call_count == 0
+    assert _partstat(stored.walk("VEVENT")[0]) == "DECLINED"
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_old_reply_does_not_change_an_answer_that_was_already_there():
+    stored = ICalendar.from_ical(SERIES.replace("NEEDS-ACTION", "ACCEPTED"))
+    result, _put = _apply_to_resource(
+        _reply((None, "ACCEPTED", 0)), stored, received_at=200.0
+    )
+    assert result == {"applied": False, "reason": "unchanged"}
+
+    result, _put = _apply_to_resource(
+        _reply((None, "DECLINED", 0)), stored, received_at=100.0
+    )
+
+    assert result == {"applied": False, "reason": "superseded"}
+    assert _partstat(stored.walk("VEVENT")[0]) == "ACCEPTED"
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_old_reply_for_the_series_is_applied_after_a_reply_for_one_occurrence():
+    stored = ICalendar.from_ical(SERIES)
+    _apply_to_resource(_reply((MOVED, "DECLINED", 1)), stored, received_at=200.0)
+
+    result, _put = _apply_to_resource(
+        _reply((None, "ACCEPTED", 0)), stored, received_at=100.0
+    )
+
+    series, exception = stored.walk("VEVENT")
+    assert result == {"applied": True, "reason": "applied"}
+    assert _partstat(series) == "ACCEPTED"
+    assert _partstat(exception) == "DECLINED"
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_old_reply_for_the_series_does_not_go_to_an_exception_with_a_newer_answer():
+    # The attendee answered TENTATIVE for all the occurrences.
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            f"PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{ATTENDEE}",
+            f"PARTSTAT=TENTATIVE:mailto:{ATTENDEE}",
+        )
+    )
+    # The newer reply gives the same answer again for the moved occurrence.
+    _apply_to_resource(_reply((MOVED, "TENTATIVE", 1)), stored, received_at=200.0)
+
+    result, _put = _apply_to_resource(
+        _reply((None, "ACCEPTED", 0)), stored, received_at=100.0
+    )
+
+    series, exception = stored.walk("VEVENT")
+    assert result == {"applied": True, "reason": "applied"}
+    assert _partstat(series) == "ACCEPTED"
+    assert _partstat(exception) == "TENTATIVE"
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_reply_without_arrival_time_is_applied_in_the_order_of_the_tasks():
+    stored = ICalendar.from_ical(SERIES)
+    _apply_to_resource(_reply((None, "DECLINED", 0)), stored, received_at=200.0)
+
+    result, _put = _apply_to_resource(_reply((None, "ACCEPTED", 0)), stored)
+
+    assert result == {"applied": True, "reason": "applied"}
 
 
 def test_write_is_not_tried_again_without_an_etag():

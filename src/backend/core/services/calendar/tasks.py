@@ -200,6 +200,7 @@ def calendar_apply_reply_task(
     ics_data: str,
     attendee_email: str,
     organizer_email: str | None = None,
+    received_at: float | None = None,
 ) -> Dict[str, Any]:
     """
     Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's calendar.
@@ -216,6 +217,8 @@ def calendar_apply_reply_task(
             ``apply_reply`` may modify.
         organizer_email: The recipient mailbox address; only a stored copy whose
             ORGANIZER matches it is updated.
+        received_at: The time when the mailbox received the reply, in seconds.
+            A retry does not apply the reply after a newer one.
     """
     try:
         service = _get_caldav_service(channel_id, user_email)
@@ -243,6 +246,7 @@ def calendar_apply_reply_task(
                 ics_data=ics_data,
                 attendee_email=attendee_email,
                 organizer_email=organizer_email,
+                received_at=received_at,
             )
         return {
             "status": "SUCCESS",

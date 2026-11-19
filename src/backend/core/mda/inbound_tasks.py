@@ -281,7 +281,10 @@ def _caldav_configured(mailbox: models.Mailbox) -> bool:
 
 
 def _enqueue_itip_reply(
-    mailbox: models.Mailbox, ics_data: str, attendee_email: str
+    mailbox: models.Mailbox,
+    ics_data: str,
+    attendee_email: str,
+    received_at: float | None = None,
 ) -> None:
     """Fan an authorized inbound iTIP REPLY out to CalDAV apply tasks.
 
@@ -290,7 +293,9 @@ def _enqueue_itip_reply(
     whichever member's principal created it (not recorded here), so every
     principal is tried and ``apply_reply`` no-ops where the UID isn't present.
     ``attendee_email`` is the verified sender — the only ATTENDEE apply may
-    touch. Lazy imports avoid a task-module import cycle.
+    touch. ``received_at`` is the time when the mailbox received the reply, in
+    seconds: it gives the order of the replies of one attendee. Lazy imports
+    avoid a task-module import cycle.
 
     TODO(itip-ratelimit): a sender with their own DMARC-passing domain can still
     drive one time-range REPORT per writable calendar per crafted reply. If a
@@ -320,6 +325,7 @@ def _enqueue_itip_reply(
                 ics_data=ics_data,
                 attendee_email=attendee_email,
                 organizer_email=organizer_email,
+                received_at=received_at,
             )
         return
 
@@ -351,6 +357,7 @@ def _enqueue_itip_reply(
             ics_data=ics_data,
             attendee_email=attendee_email,
             organizer_email=organizer_email,
+            received_at=received_at,
         )
 
 
@@ -675,7 +682,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
                     inbound_message_id,
                     itip_reply_ics,
                     lambda: _enqueue_itip_reply(
-                        mailbox, itip_reply_ics, itip_reply_attendee
+                        mailbox,
+                        itip_reply_ics,
+                        itip_reply_attendee,
+                        inbound_message.created_at.timestamp(),
                     ),
                 )
 

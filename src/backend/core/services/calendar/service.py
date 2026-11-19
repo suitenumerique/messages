@@ -8,6 +8,7 @@ library's dependency surface.
 
 # pylint: disable=too-many-lines
 
+import hashlib
 import logging
 import re
 import uuid
@@ -16,6 +17,7 @@ from enum import StrEnum
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
+from django.core.cache import cache
 
 import defusedxml.ElementTree as ET
 import requests
@@ -82,6 +84,9 @@ def attendee_key(value) -> str:
 # Answers that a REPLY can give. A delegation (DELEGATED) is not supported.
 _REPLY_PARTSTATS = frozenset({"ACCEPTED", "DECLINED", "TENTATIVE"})
 
+# Seconds. Longer than the time in which the apply task retries a reply.
+_REPLY_ORDER_TTL = 24 * 3600
+
 
 def _date_value(prop):
     """Return the date or date-time of a property, or None when it has none."""
@@ -103,6 +108,15 @@ def _sequence(component):
 def _occurrence_key(recurrence_id):
     """Return the key of the occurrence, or None when there is no RECURRENCE-ID."""
     return None if recurrence_id is None else recurrence_key(recurrence_id)
+
+
+def _reply_order_key(resource_url, attendee):
+    """Return the cache key of the arrival times of replies.
+
+    There is one key for each attendee of each stored event.
+    """
+    digest = hashlib.sha256(f"{resource_url}\n{attendee}".encode()).hexdigest()
+    return f"calendar_reply_order:{digest}"
 
 
 def _q(ns, tag):
@@ -851,7 +865,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             return reply, None
         return None, ("attendee-mismatch" if saw_uid else "unparseable-reply")
 
-    def apply_reply(self, ics_data, attendee_email, organizer_email=None):
+    def apply_reply(
+        self, ics_data, attendee_email, organizer_email=None, received_at=None
+    ):
         """Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's stored event.
 
         Mirror of ``respond_to_event``. Only ever modifies the ATTENDEE matching
@@ -867,6 +883,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         Unlike SabreDAV, it also goes to the exceptions that the reply does not
         name, see ``_apply_series_answer``.
 
+        ``received_at`` is the time when the mailbox received the reply, in
+        seconds. The apply task can retry an old reply after a new one. A reply
+        does not change an occurrence that has an answer from a reply that
+        arrived later: the reason is ``superseded``.
+
         Does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
         controls the messages that an attendee's server sends to the organizer
         (RFC 6638 §7.1). It does not stop the updates to attendees. It also
@@ -877,6 +898,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         if reply is None:
             return {"applied": False, "reason": reason}
 
+        reply["received_at"] = received_at
         organizer_norm = attendee_key(organizer_email)
         start, end = self._reply_query_window(reply)
 
@@ -931,12 +953,22 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 stored = ICalendar.from_ical(fresh_ics)
             except Exception:  # pylint: disable=broad-exception-caught
                 return {"applied": False, "reason": "no-etag"}
+        order_key = _reply_order_key(resource_url, reply["attendee"])
+        order = cache.get(order_key) or {}
+        received_at = reply.get("received_at")
+        # The occurrences that have an answer from a reply that arrived later.
+        newer = {
+            key
+            for key, at in order.items()
+            if received_at is not None and at > received_at
+        }
         for attempt in (1, 2):
-            outcomes = self._apply_answers(stored, reply)
+            outcomes = self._apply_answers(stored, reply, newer)
             # A shared mailbox gets one apply task per user, and a relay can
             # deliver the same reply twice. Do not write an event that did not
             # change: each write makes the server process it for scheduling.
             if "applied" not in outcomes:
+                self._record_arrival(order_key, order, reply, outcomes)
                 return {"applied": False, "reason": outcomes[0]}
             # The stored event comes from the organizer's calendar, not from the
             # email. Write it back whole. ``rebuild_for_storage`` is for untrusted
@@ -944,6 +976,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             body = stored.to_ical().decode("utf-8")
             try:
                 self._put_resource(resource_url, body, etag)
+                self._record_arrival(order_key, order, reply, outcomes)
                 return {"applied": True, "reason": "applied"}
             except CalDAVError as exc:
                 if exc.status_code != 412:
@@ -966,8 +999,26 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     return {"applied": False, "reason": "concurrent-modification"}
         return {"applied": False, "reason": "concurrent-modification"}
 
-    def _apply_answers(self, stored, reply):
+    @staticmethod
+    def _record_arrival(order_key, order, reply, outcomes):
+        """Record when the reply arrived, for each occurrence that it answers.
+
+        ``order`` gives the arrival time of the last reply for each occurrence.
+        An answer that changes nothing is recorded too: it is in effect.
+        """
+        received_at = reply.get("received_at")
+        if received_at is None:
+            return
+        for answer, outcome in zip(reply["answers"], outcomes, strict=True):
+            if outcome in ("applied", "unchanged"):
+                order[_occurrence_key(answer["recurrence_id"])] = received_at
+        cache.set(order_key, order, _REPLY_ORDER_TTL)
+
+    def _apply_answers(self, stored, reply, newer=frozenset()):
         """Apply each answer of the reply to its VEVENT in ``stored``, in-place.
+
+        ``newer`` holds the occurrences that have an answer from a reply that
+        arrived later. An answer for one of them is ``superseded``.
 
         Returns the outcome of each answer: ``applied``, or the reason why the
         answer changes nothing.
@@ -993,24 +1044,31 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 outcome = (
                     "no-matching-event" if key is None else "recurrence-not-supported"
                 )
+            elif key in newer:
+                outcome = "superseded"
             elif key is None:
-                outcome = self._apply_series_answer(events, named, attendee, answer)
+                outcome = self._apply_series_answer(
+                    events, named | newer, attendee, answer
+                )
             else:
                 outcome = self._apply_answer(events[key], attendee, answer)
             outcomes.append(outcome)
         return outcomes
 
-    def _apply_series_answer(self, events, named, attendee_email, answer):
+    def _apply_series_answer(self, events, skipped, attendee_email, answer):
         """Set the answer of the attendee on the series, in-place.
 
-        The answer also goes to each exception that is not in ``named``, the
-        occurrences that the reply names. Some clients, such as Outlook, send
-        only the series VEVENT to answer for all the occurrences. An exception
-        takes the answer when the attendee has no answer there, or has the
-        answer that the series had. A different answer for one occurrence stays.
+        The answer also goes to each exception that is not in ``skipped``: the
+        occurrences that the reply names, and those that have a newer answer.
+        Some clients, such as Outlook, send only the series VEVENT to answer
+        for all the occurrences. An exception takes the answer when the
+        attendee has no answer there, or has the answer that the series had. A
+        different answer for one occurrence stays.
 
         The SEQUENCE of the answer is the SEQUENCE of the series. It is not
-        compared with the SEQUENCE of an exception.
+        compared with the SEQUENCE of an exception. A moved occurrence often
+        has a higher SEQUENCE than its series, and a reply for the series does
+        not contain it.
 
         Returns ``applied`` when a VEVENT changes, else the reason why the
         series does not change.
@@ -1021,7 +1079,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         if outcome not in ("applied", "unchanged"):
             return outcome
         for key, exception in events.items():
-            if key in named:
+            if key in skipped:
                 continue
             current = self._partstat(exception, attendee_email)
             if current not in ("NEEDS-ACTION", before):
