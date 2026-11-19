@@ -14,6 +14,7 @@ from rest_framework import status
 
 from core import enums
 from core.api import serializers
+from core.api.viewsets.thread import ThreadViewSet
 from core.factories import (
     ContactFactory,
     LabelFactory,
@@ -1942,6 +1943,70 @@ class TestThreadListAPI:
             )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
+    def test_search_reads_state_of_the_listed_mailbox_on_shared_threads(
+        self, api_client, url
+    ):
+        """Unread and starred come from the listed mailbox access only, even
+        when the thread is shared with mailboxes in another state.
+
+        The serialized values alone cannot catch a join on every access: the
+        grouping sorts the listed mailbox state last and the hydration keeps
+        the last row of each thread. The row count of the hydration does.
+        """
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        mailbox = MailboxFactory(users_read=[user])
+        other_mailbox = MailboxFactory(users_read=[user])
+        now = timezone.now()
+        threads = ThreadFactory.create_batch(5, messaged_at=now, has_messages=True)
+        for thread in threads:
+            ThreadAccessFactory(
+                mailbox=mailbox, thread=thread, read_at=None, starred_at=now
+            )
+            ThreadAccessFactory(
+                mailbox=other_mailbox,
+                thread=thread,
+                read_at=now + timedelta(minutes=1),
+                starred_at=None,
+            )
+
+        annotate = ThreadViewSet._annotate_thread_permissions
+
+        def search(listed_mailbox):
+            hydrated = []
+
+            def spy_annotate(*args):
+                hydrated.append(annotate(*args))
+                return hydrated[-1]
+
+            with (
+                mock.patch("core.api.viewsets.thread.search_threads") as mock_search,
+                mock.patch.object(
+                    ThreadViewSet,
+                    "_annotate_thread_permissions",
+                    side_effect=spy_annotate,
+                ),
+            ):
+                mock_search.return_value = {
+                    "threads": [{"id": str(thread.id)} for thread in threads],
+                    "total": len(threads),
+                }
+                response = api_client.get(
+                    url, {"search": "test", "mailbox_id": str(listed_mailbox.id)}
+                )
+            assert response.status_code == status.HTTP_200_OK
+            assert hydrated[0].count() == len(threads)
+            assert [r["id"] for r in response.data["results"]] == [
+                str(thread.id) for thread in threads
+            ]
+            return {
+                (r["has_unread"], r["has_starred"]) for r in response.data["results"]
+            }
+
+        assert search(mailbox) == {(True, True)}
+        assert search(other_mailbox) == {(False, False)}
 
     @override_settings(OPENSEARCH_HOSTS=["http://opensearch:9200"])
     def test_search_without_mailbox_id_scopes_to_accessible_mailboxes(

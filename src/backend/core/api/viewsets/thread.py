@@ -216,7 +216,8 @@ class ThreadViewSet(
         Shared between the regular DB queryset and the OpenSearch fallback so
         both code paths always expose the same fields (e.g. ``events_count``,
         ``assigned_users``), avoiding silent divergence in the serialized
-        payload.
+        payload. With a ``mailbox_id``, the queryset must already be joined on
+        that mailbox's access (see ``thread_state_annotations``).
         """
         can_edit_qs = models.ThreadAccess.objects.filter(
             thread=OuterRef("pk"),
@@ -670,6 +671,12 @@ class ThreadViewSet(
                 threads = models.Thread.objects.filter(
                     id__in=thread_ids,
                 ).filter(Exists(access_filter))
+                if mailbox_id:
+                    # The per-mailbox read and starred annotations read this
+                    # join, as with Mailbox.threads_viewer in get_queryset().
+                    # Without it they join every access of the thread, and
+                    # the grouping yields one row per distinct state.
+                    threads = threads.filter(accesses__mailbox_id=mailbox_id)
                 threads = self._annotate_thread_permissions(
                     threads, request.user, mailbox_id
                 )
