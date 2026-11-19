@@ -953,6 +953,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 fresh_ics, etag = self._get_resource(resource_url)
                 if fresh_ics is None:
                     return {"applied": False, "reason": "concurrent-modification"}
+                if not etag:
+                    # As before the first attempt: never PUT without If-Match.
+                    logger.warning(
+                        "No etag for %s; refusing unconditional iTIP write",
+                        resource_url,
+                    )
+                    return {"applied": False, "reason": "no-etag"}
                 try:
                     stored = ICalendar.from_ical(fresh_ics)
                 except Exception:  # pylint: disable=broad-exception-caught
