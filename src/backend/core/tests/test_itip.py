@@ -121,6 +121,13 @@ class TestEvaluateInboundReply:
         assert flag == itip.FLAG_VERIFIED
         assert attendee == "alice@corp.example"
 
+    def test_from_with_a_letter_that_lowers_to_ascii_is_rejected(self):
+        # ``str.lower()`` maps U+212A KELVIN SIGN to "k". The sender is not the
+        # attendee "alice".
+        ics = REPLY_ICS.replace("Alice@Corp.example", "nick@corp.example")
+        parsed = _parsed(ics, "nic\u212a@corp.example")
+        assert itip.evaluate_inbound_reply(parsed, None, False) == (None, None, None)
+
     def test_from_not_an_rsvping_attendee_rejected(self):
         # From is the organizer, not an ATTENDEE carrying a PARTSTAT.
         parsed = _parsed(REPLY_ICS, "org@example.com")
