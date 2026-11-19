@@ -64,6 +64,17 @@ def _attendee_key(value) -> str:
     return normalize_address(address)
 
 
+def _sequence(component):
+    """Return the SEQUENCE of a component, or 0 when it has no valid one.
+
+    SabreDAV writes an empty SEQUENCE in the REPLY to an event that has none.
+    """
+    try:
+        return int(component.get("SEQUENCE"))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _q(ns, tag):
     return f"{{{ns}}}{tag}"
 
@@ -774,14 +785,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 # hatch.
                 return None, "unparseable-reply"
             dtend = comp.get("DTEND")
-            seq = comp.get("SEQUENCE")
             return {
                 "uid": str(uid),
                 "attendee": target,
                 "partstat": partstat,
                 "start": dtstart.dt,
                 "end": dtend.dt if dtend is not None else None,
-                "sequence": int(seq) if seq is not None else 0,
+                "sequence": _sequence(comp),
                 "is_recurrence_instance": comp.get("RECURRENCE-ID") is not None,
             }, None
         return None, ("attendee-mismatch" if saw_uid else "unparseable-reply")
@@ -965,9 +975,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """``stale-sequence`` if the REPLY answers an older SEQUENCE of any
         stored VEVENT, else None. Like SabreDAV, no DTSTAMP bookkeeping."""
         for comp in stored.walk("VEVENT"):
-            stored_seq = comp.get("SEQUENCE")
-            stored_seq = int(stored_seq) if stored_seq is not None else 0
-            if reply["sequence"] < stored_seq:
+            if reply["sequence"] < _sequence(comp):
                 return "stale-sequence"
         return None
 

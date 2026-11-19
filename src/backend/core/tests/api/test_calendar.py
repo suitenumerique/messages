@@ -3064,6 +3064,36 @@ class TestApplyReply:
 
 
 @pytest.mark.django_db()
+def test_reply_with_an_empty_sequence_is_applied(
+    caldav_channel, radicale_with_calendar
+):
+    calendar_url, put_event = radicale_with_calendar
+    uid = "apply-empty-seq@example.com"
+    attendee = TestApplyReply.ATTENDEE
+    put_event(uid, _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=attendee))
+    service = CalDAVService.from_channel(caldav_channel)
+
+    # SabreDAV writes "SEQUENCE:" in the REPLY to an event that has none.
+    reply = _REPLY_EVENT.format(
+        uid=uid,
+        seq="",
+        dtstamp="20260102T000000Z",
+        partstat="ACCEPTED",
+        attendee=attendee,
+    )
+    result = service.apply_reply(reply, attendee_email=attendee)
+
+    assert result == {"applied": True, "reason": "applied"}
+    resp = requests.get(
+        calendar_url.rstrip("/") + f"/{uid}.ics",
+        auth=(RADICALE_USER, RADICALE_PASSWORD),
+        timeout=5,
+    )
+    vevent = ICalendar.from_ical(resp.text).walk("VEVENT")[0]
+    assert _attendee_partstat(vevent, attendee) == "ACCEPTED"
+
+
+@pytest.mark.django_db()
 def test_enqueue_itip_reply_fans_out_to_mailbox_users(mailbox):
     u1 = factories.UserFactory()
     u2 = factories.UserFactory()
