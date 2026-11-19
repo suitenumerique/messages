@@ -276,7 +276,7 @@ def _caldav_configured(mailbox: models.Mailbox) -> bool:
     if settings.CALDAV_DEFAULT_URL and settings.CALDAV_DEFAULT_PASSWORD:
         return True
     return models.Channel.objects.filter(
-        mailbox=mailbox, type=ChannelTypes.CALDAV
+        mailbox=mailbox, type=ChannelTypes.CALDAV, is_active=True
     ).exists()
 
 
@@ -307,7 +307,7 @@ def _enqueue_itip_reply(
     organizer_email = str(mailbox)
     channel_ids = list(
         models.Channel.objects.filter(
-            mailbox=mailbox, type=ChannelTypes.CALDAV
+            mailbox=mailbox, type=ChannelTypes.CALDAV, is_active=True
         ).values_list("id", flat=True)
     )
     if channel_ids:

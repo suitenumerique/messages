@@ -7,7 +7,11 @@ from sentry_sdk import capture_exception
 
 from core.enums import ChannelTypes
 from core.models import Channel
-from core.services.calendar.service import CalDAVError, CalDAVService
+from core.services.calendar.service import (
+    CalDAVError,
+    CalDAVService,
+    CalDAVTransientError,
+)
 
 from messages.celery_app import app as celery_app
 
@@ -132,7 +136,17 @@ def calendar_rsvp_task(
 # ignore_result: this task is fire-and-forget from the inbound hook (never
 # polled), and its args carry the raw REPLY ICS + addresses — keeping them out
 # of the result backend avoids persisting that content there.
-@celery_app.task(bind=True, ignore_result=True)
+#
+# Nothing applies the reply again later, so a transient CalDAV failure must not
+# lose it. The task retries five times, with delays that grow up to 8 minutes.
+@celery_app.task(
+    bind=True,
+    ignore_result=True,
+    autoretry_for=(CalDAVTransientError,),
+    retry_backoff=30,
+    retry_backoff_max=600,
+    max_retries=5,
+)
 def calendar_apply_reply_task(
     self,  # pylint: disable=unused-argument
     channel_id: str | None,
@@ -188,6 +202,8 @@ def calendar_apply_reply_task(
             "result": result,
             "error": None,
         }
+    except CalDAVTransientError:
+        raise
     except CalDAVError as e:
         logger.warning("Apply-reply failed: %s", e)
         return {

@@ -89,6 +89,13 @@ class CalDAVError(Exception):
         self.status_code = status_code
 
 
+class CalDAVTransientError(CalDAVError):
+    """CalDAV failure that can succeed on a later attempt.
+
+    Covers network failures, rate limits (429) and server errors (5xx).
+    """
+
+
 class CalDAVService:  # pylint: disable=too-many-instance-attributes
     """Minimal CalDAV client (HTTP + icalendar, no full caldav lib)."""
 
@@ -189,9 +196,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # Surface network-level failures (timeout, connection reset, DNS,
             # SSL) as CalDAVError so callers can handle them uniformly with
             # protocol errors instead of leaking ``requests`` exceptions.
-            raise CalDAVError(f"{method} {url} failed: {exc}") from exc
+            raise CalDAVTransientError(f"{method} {url} failed: {exc}") from exc
         if resp.status_code >= 400:
-            raise CalDAVError(
+            transient = resp.status_code == 429 or resp.status_code >= 500
+            raise (CalDAVTransientError if transient else CalDAVError)(
                 f"{method} {url} failed: HTTP {resp.status_code}",
                 status_code=resp.status_code,
             )

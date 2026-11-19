@@ -29,7 +29,12 @@ from core.enums import ChannelTypes, InboundOrigin, MailboxRoleChoices
 from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_tasks import _enqueue_itip_reply
 from core.services.calendar.ics_rebuild import rebuild_for_storage
-from core.services.calendar.service import CalDAVError, CalDAVService
+from core.services.calendar.service import (
+    CalDAVError,
+    CalDAVService,
+    CalDAVTransientError,
+)
+from core.services.calendar.tasks import calendar_apply_reply_task
 
 
 class _SilentHandler(WSGIRequestHandler):
@@ -3107,6 +3112,85 @@ def test_enqueue_itip_reply_fans_out_across_all_caldav_channels(mailbox):
 
     channel_ids = {c.kwargs["channel_id"] for c in delay.call_args_list}
     assert channel_ids == {str(c1.id), str(c2.id)}
+
+
+@pytest.mark.django_db()
+def test_enqueue_itip_reply_does_not_use_a_paused_caldav_channel(mailbox):
+    user = factories.UserFactory()
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=MailboxRoleChoices.ADMIN
+    )
+    factories.ChannelFactory(
+        mailbox=mailbox,
+        type=ChannelTypes.CALDAV,
+        is_active=False,
+        settings={"url": "https://cal.example/a/"},
+        encrypted_settings={"username": "u", "password": "p"},
+    )
+
+    with mock.patch(
+        "core.services.calendar.tasks.calendar_apply_reply_task.delay"
+    ) as delay:
+        _enqueue_itip_reply(mailbox, "ICS", "alice@corp.example")
+
+    assert [c.kwargs["channel_id"] for c in delay.call_args_list] == [None]
+    assert delay.call_args.kwargs["user_email"] == user.email
+
+
+def _run_apply_reply_task(apply_reply_results):
+    """Run the task with a fake service and return the ``apply_reply`` mock."""
+    service = mock.Mock()
+    service.apply_reply.side_effect = apply_reply_results
+    with mock.patch(
+        "core.services.calendar.tasks._get_caldav_service", return_value=service
+    ):
+        calendar_apply_reply_task.apply(
+            kwargs={
+                "channel_id": None,
+                "user_email": "user@example.com",
+                "ics_data": "ICS",
+                "attendee_email": "alice@corp.example",
+            }
+        )
+    return service.apply_reply
+
+
+def test_apply_reply_task_retries_a_transient_caldav_error():
+    apply_reply = _run_apply_reply_task(
+        [
+            CalDAVTransientError("unavailable", status_code=503),
+            {"applied": True, "reason": "applied"},
+        ]
+    )
+    assert apply_reply.call_count == 2
+
+
+def test_apply_reply_task_does_not_retry_a_permanent_caldav_error():
+    apply_reply = _run_apply_reply_task([CalDAVError("forbidden", status_code=403)])
+    assert apply_reply.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "status_code, transient",
+    [(429, True), (500, True), (503, True), (403, False), (404, False), (412, False)],
+)
+def test_request_marks_transient_http_errors(status_code, transient):
+    service = CalDAVService(url="http://caldav.example/")
+    response = mock.Mock(status_code=status_code)
+    with mock.patch.object(service.session, "request", return_value=response):
+        with pytest.raises(CalDAVError) as excinfo:
+            service._request("GET", "http://caldav.example/event.ics")
+    assert isinstance(excinfo.value, CalDAVTransientError) is transient
+    assert excinfo.value.status_code == status_code
+
+
+def test_request_marks_network_errors_as_transient():
+    service = CalDAVService(url="http://caldav.example/")
+    with mock.patch.object(
+        service.session, "request", side_effect=requests.exceptions.ConnectTimeout()
+    ):
+        with pytest.raises(CalDAVTransientError):
+            service._request("GET", "http://caldav.example/event.ics")
 
 
 def test_mark_replied_matches_sabredav():
