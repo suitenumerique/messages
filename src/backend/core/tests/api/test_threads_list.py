@@ -1463,6 +1463,24 @@ class TestThreadStatsAPI:
         assert response.status_code == 400
         assert "Missing 'stats_fields' query parameter" in response.data["detail"]
 
+    @pytest.mark.parametrize("stats_fields", [None, "", "invalid_field", "all"])
+    def test_stats_checks_mailbox_access_before_stats_fields(
+        self, api_client, url, stats_fields
+    ):
+        """A mailbox the user cannot access is refused, whatever the fields."""
+
+        user = UserFactory()
+        api_client.force_authenticate(user=user)
+        other_mailbox = MailboxFactory(users_read=[UserFactory()])
+        params = {"mailbox_id": str(other_mailbox.id)}
+        if stats_fields is not None:
+            params["stats_fields"] = stats_fields
+
+        response = api_client.get(url, params)
+
+        assert response.status_code == 403
+        assert response.data["detail"] == "You do not have access to this mailbox."
+
     def test_stats_anonymous_user(self, api_client, url):
         """Test stats endpoint with anonymous user."""
 

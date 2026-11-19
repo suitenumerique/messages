@@ -9,7 +9,7 @@ import useFlag from "./use-flag";
  */
 const useTrash = () => {
     const { t } = useTranslation();
-    const { selectedMailbox, selectedThread, invalidateMailbox, invalidateThreadsStats, unpinThreads } = useMailboxContext();
+    const { selectedMailbox, selectedThread, invalidateMailbox, invalidateThreadsStats, invalidateLabelsStats, unpinThreads } = useMailboxContext();
     const queryClient = useQueryClient();
 
     const { mark, unmark, status } = useFlag('trashed', {
@@ -33,6 +33,7 @@ const useTrash = () => {
             unpinThreads([...(data.thread_ids ?? []), ...leavingSpamThreadIds]);
             invalidateMailbox();
             invalidateThreadsStats();
+            invalidateLabelsStats();
             // Trashing moves storage to the trash subtotal and out of the
             // largest threads list of the storage settings.
             const mailboxId = data.mailbox_id ?? selectedMailbox?.id;

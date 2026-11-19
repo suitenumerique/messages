@@ -18,7 +18,7 @@ type DeleteThreadAccessOptions = {
  * the thread had been pinned earlier in this view by mark-as-read or star).
  */
 const useDeleteThreadAccess = () => {
-    const { selectedMailbox, invalidateMailbox, invalidateThreadsStats, unpinThreads, unselectThread } = useMailboxContext();
+    const { selectedMailbox, invalidateMailbox, invalidateThreadsStats, invalidateLabelsStats, unpinThreads, unselectThread } = useMailboxContext();
     const queryClient = useQueryClient();
     const { mutate, status, isPending, variables } = useThreadsAccessesDestroy();
 
@@ -33,6 +33,7 @@ const useDeleteThreadAccess = () => {
                 queryClient.invalidateQueries({ queryKey: getThreadsUsersListQueryKey(threadId) });
                 if (isSelfRemoval) {
                     invalidateThreadsStats();
+                    invalidateLabelsStats();
                     unselectThread();
                 }
                 onSuccess?.();

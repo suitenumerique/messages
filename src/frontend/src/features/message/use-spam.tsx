@@ -7,7 +7,7 @@ import { useMailboxContext } from "../providers/mailbox";
  */
 const useSpam = () => {
     const { t } = useTranslation();
-    const { invalidateMailbox, invalidateThreadsStats, unpinThreads, selectedThread } = useMailboxContext();
+    const { invalidateMailbox, invalidateThreadsStats, invalidateLabelsStats, unpinThreads, selectedThread } = useMailboxContext();
     const { mark, unmark, status } = useFlag('spam', {
         toastMessages: {
             thread: (updatedCount, submittedCount) => {
@@ -28,6 +28,7 @@ const useSpam = () => {
             unpinThreads([...(data.thread_ids ?? []), ...messageThreadIds]);
             invalidateMailbox();
             invalidateThreadsStats();
+            invalidateLabelsStats();
         },
     });
 

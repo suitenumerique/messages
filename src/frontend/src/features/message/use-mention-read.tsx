@@ -25,10 +25,9 @@ type UseMentionReadReturn = {
  *      has_unread_mention=1 filter once no unread mention remains.
  *
  * We deliberately avoid optimistic updates on stats. The mailbox stats
- * cache is multi-keyed (global `['threads', 'stats', mailboxId]` coexists
- * with per-label `['threads', 'stats', mailboxId, 'label_slug=…']` entries
- * under the same prefix), so any `setQueriesData` here would fan out to
- * label counters that must not be touched. Keeping this flow
+ * cache is multi-keyed (one entry per folder filter under
+ * `['threads', 'stats', mailboxId]`), so any `setQueriesData` here would
+ * fan out to folder counters that must not be touched. Keeping this flow
  * invalidation-only is simpler and stays consistent with how the rest of
  * the app treats the stats cache (see `invalidateThreadsStats`).
  *

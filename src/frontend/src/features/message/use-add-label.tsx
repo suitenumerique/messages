@@ -17,7 +17,7 @@ type AddLabelOptions = {
  * list — the new label never shows up visually.
  */
 const useAddLabel = () => {
-    const { invalidateMailbox, pinThreads } = useMailboxContext();
+    const { invalidateMailbox, invalidateLabelsStats, pinThreads } = useMailboxContext();
     const { mutate, status } = useLabelsAddThreadsCreate();
 
     const addLabel = ({ label, threadIds, onSuccess }: AddLabelOptions) => {
@@ -31,6 +31,7 @@ const useAddLabel = () => {
                     return { ...thread, labels: [...thread.labels, label] };
                 });
                 invalidateMailbox();
+                invalidateLabelsStats();
                 onSuccess?.();
             }
         });

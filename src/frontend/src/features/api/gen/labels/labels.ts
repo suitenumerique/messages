@@ -27,6 +27,10 @@ import type {
   LabelsAddThreadsCreateBody,
   LabelsListParams,
   LabelsRemoveThreadsCreateBody,
+  LabelsStatsRetrieve200,
+  LabelsStatsRetrieve400,
+  LabelsStatsRetrieve403,
+  LabelsStatsRetrieveParams,
   PatchedLabelRequest,
   TreeLabel,
 } from ".././models";
@@ -898,3 +902,224 @@ export const useLabelsRemoveThreadsCreate = <
 
   return useMutation(mutationOptions, queryClient);
 };
+/**
+ * 
+        Count the threads of every label of a mailbox, in a single request.
+
+        Each label is counted as its folder lists threads by default: threads
+        the mailbox can see, spam and trash excluded, and only those carrying
+        the label itself (a parent label does not count its children).
+        Labels without any thread in that scope are absent from the response.
+        
+ */
+export type labelsStatsRetrieveResponse200 = {
+  data: LabelsStatsRetrieve200;
+  status: 200;
+};
+
+export type labelsStatsRetrieveResponse400 = {
+  data: LabelsStatsRetrieve400;
+  status: 400;
+};
+
+export type labelsStatsRetrieveResponse403 = {
+  data: LabelsStatsRetrieve403;
+  status: 403;
+};
+
+export type labelsStatsRetrieveResponseSuccess =
+  labelsStatsRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type labelsStatsRetrieveResponseError = (
+  | labelsStatsRetrieveResponse400
+  | labelsStatsRetrieveResponse403
+) & {
+  headers: Headers;
+};
+
+export type labelsStatsRetrieveResponse =
+  | labelsStatsRetrieveResponseSuccess
+  | labelsStatsRetrieveResponseError;
+
+export const getLabelsStatsRetrieveUrl = (
+  params: LabelsStatsRetrieveParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1.0/labels/stats/?${stringifiedParams}`
+    : `/api/v1.0/labels/stats/`;
+};
+
+export const labelsStatsRetrieve = async (
+  params: LabelsStatsRetrieveParams,
+  options?: RequestInit,
+): Promise<labelsStatsRetrieveResponse> => {
+  return fetchAPI<labelsStatsRetrieveResponse>(
+    getLabelsStatsRetrieveUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getLabelsStatsRetrieveQueryKey = (
+  params?: LabelsStatsRetrieveParams,
+) => {
+  return [`/api/v1.0/labels/stats/`, ...(params ? [params] : [])] as const;
+};
+
+export const getLabelsStatsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+  TError = ErrorType<LabelsStatsRetrieve400 | LabelsStatsRetrieve403>,
+>(
+  params: LabelsStatsRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getLabelsStatsRetrieveQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof labelsStatsRetrieve>>
+  > = ({ signal }) =>
+    labelsStatsRetrieve(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type LabelsStatsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof labelsStatsRetrieve>>
+>;
+export type LabelsStatsRetrieveQueryError = ErrorType<
+  LabelsStatsRetrieve400 | LabelsStatsRetrieve403
+>;
+
+export function useLabelsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+  TError = ErrorType<LabelsStatsRetrieve400 | LabelsStatsRetrieve403>,
+>(
+  params: LabelsStatsRetrieveParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof labelsStatsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useLabelsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+  TError = ErrorType<LabelsStatsRetrieve400 | LabelsStatsRetrieve403>,
+>(
+  params: LabelsStatsRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof labelsStatsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useLabelsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+  TError = ErrorType<LabelsStatsRetrieve400 | LabelsStatsRetrieve403>,
+>(
+  params: LabelsStatsRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useLabelsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+  TError = ErrorType<LabelsStatsRetrieve400 | LabelsStatsRetrieve403>,
+>(
+  params: LabelsStatsRetrieveParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof labelsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getLabelsStatsRetrieveQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}

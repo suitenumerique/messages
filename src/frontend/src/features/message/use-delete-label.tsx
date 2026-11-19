@@ -22,7 +22,7 @@ type DeleteLabelOptions = {
  *     would be re-inserted from cache with its stale label still attached.
  */
 const useDeleteLabel = () => {
-    const { invalidateMailbox, unpinThreads, pinThreads } = useMailboxContext();
+    const { invalidateMailbox, invalidateLabelsStats, unpinThreads, pinThreads } = useMailboxContext();
     const searchParams = useUrlSearchParams();
     const { mutate, status } = useLabelsRemoveThreadsCreate();
 
@@ -41,6 +41,7 @@ const useDeleteLabel = () => {
                     }));
                 }
                 invalidateMailbox();
+                invalidateLabelsStats();
                 onSuccess?.();
             }
         });

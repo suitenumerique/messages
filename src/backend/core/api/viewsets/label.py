@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
 
 import rest_framework as drf
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
     OpenApiResponse,
@@ -18,6 +19,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from core import enums, models
+from core.services.thread_stats import (
+    InvalidStatsFieldsError,
+    count_threads_by_label,
+    parse_stats_fields,
+)
 
 from .. import permissions, serializers
 
@@ -157,6 +163,95 @@ class LabelViewSet(
         root_labels.sort(key=lambda x: x["slug"])
 
         return Response(root_labels)
+
+    @extend_schema(
+        description="""
+        Count the threads of every label of a mailbox, in a single request.
+
+        Each label is counted as its folder lists threads by default: threads
+        the mailbox can see, spam and trash excluded, and only those carrying
+        the label itself (a parent label does not count its children).
+        Labels without any thread in that scope are absent from the response.
+        """,
+        parameters=[
+            OpenApiParameter(
+                name="mailbox_id",
+                type=uuid.UUID,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description="Mailbox whose labels are counted.",
+            ),
+            OpenApiParameter(
+                name="stats_fields",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                required=True,
+                description=(
+                    "Comma-separated list of fields to count per label, "
+                    "same values as `GET /threads/stats/`."
+                ),
+                enum=[*enums.THREAD_STATS_FIELDS_MAP],
+                style="form",
+                explode=False,
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {"type": "integer"},
+                    },
+                },
+                description=("Counts keyed by label ID, then by requested field."),
+            ),
+            400: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                },
+                description=(
+                    "Returned if `mailbox_id` is missing or invalid, or if "
+                    "`stats_fields` is missing or contains invalid fields."
+                ),
+            ),
+            403: OpenApiResponse(
+                response={
+                    "type": "object",
+                    "properties": {"detail": {"type": "string"}},
+                },
+                description="The user has no access to the mailbox.",
+            ),
+        },
+    )
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="stats",
+        url_name="stats",
+    )
+    def stats(self, request):
+        """Count the threads of every label of a mailbox."""
+        try:
+            mailbox_id = uuid.UUID(request.query_params.get("mailbox_id", ""))
+        except ValueError:
+            return Response(
+                {"detail": "Missing or invalid 'mailbox_id' query parameter."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            fields = parse_stats_fields(request.query_params.get("stats_fields", ""))
+        except InvalidStatsFieldsError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        mailbox = models.Mailbox.objects.filter(
+            id=mailbox_id, accesses__user=request.user
+        ).first()
+        if mailbox is None:
+            raise PermissionDenied("You do not have access to this mailbox.")
+
+        return Response(count_threads_by_label(request.user, mailbox, fields))
 
     @extend_schema(
         request=serializers.LabelSerializer,

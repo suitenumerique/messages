@@ -2161,6 +2161,101 @@
                 }
             }
         },
+        "/api/v1.0/labels/stats/": {
+            "get": {
+                "operationId": "labels_stats_retrieve",
+                "description": "\n        Count the threads of every label of a mailbox, in a single request.\n\n        Each label is counted as its folder lists threads by default: threads\n        the mailbox can see, spam and trash excluded, and only those carrying\n        the label itself (a parent label does not count its children).\n        Labels without any thread in that scope are absent from the response.\n        ",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Mailbox whose labels are counted.",
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "stats_fields",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "all",
+                                "all_unread",
+                                "has_assigned_to_me",
+                                "has_delivery_failed",
+                                "has_delivery_pending",
+                                "has_mention",
+                                "has_unassigned",
+                                "has_unread_mention"
+                            ]
+                        },
+                        "description": "Comma-separated list of fields to count per label, same values as `GET /threads/stats/`.",
+                        "required": true,
+                        "explode": false,
+                        "style": "form"
+                    }
+                ],
+                "tags": [
+                    "labels"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Counts keyed by label ID, then by requested field."
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Returned if `mailbox_id` is missing or invalid, or if `stats_fields` is missing or contains invalid fields."
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "The user has no access to the mailbox."
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/": {
             "get": {
                 "operationId": "mailboxes_list",

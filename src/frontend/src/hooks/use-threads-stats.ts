@@ -5,12 +5,9 @@ import { ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/feat
  *
  * Single source of truth shared by:
  *   - `useThreadsStats`, which passes `queryParams` to scope the cache per
- *     filter/label and requested fields
+ *     filter and requested fields
  *   - invalidation / optimistic-update sites that target the whole
  *     per-mailbox stats subtree (omit `queryParams` for prefix matching)
- *
- * Keep in sync with the `invalidateThreadsStats` predicate, which relies
- * on `queryParams` being the last entry to filter out `label_slug=*` keys.
  */
 export const getThreadsStatsQueryKey = (
     mailboxId: string | undefined,
@@ -48,8 +45,8 @@ const DEFAULT_FOLDER_STATS: FolderStatsDefinition = { count: ThreadsStatsRetriev
  * The API takes a comma-separated list of fields, which the generated type
  * does not model. Sorted so that the same set always yields the same key.
  */
-const combineStatsFields = (fields: readonly ThreadsStatsRetrieveStatsFields[]) =>
-    [...new Set(fields)].sort().join(',') as ThreadsStatsRetrieveStatsFields;
+export const combineStatsFields = <TField extends string>(fields: readonly TField[]) =>
+    [...new Set(fields)].sort().join(',') as TField;
 
 const getStatsQueryParams = (
     filter: Readonly<Record<string, string>>,
@@ -73,7 +70,7 @@ export const getFolderStatsQueryKey = (mailboxId: string | undefined, folder: St
  * belong to the cache key, so two consumers asking different counts of the
  * same filter never overwrite each other.
  */
-export const useThreadsStats = ({ mailboxId, filter = {}, fields, enabled = true }: UseThreadsStatsOptions) => {
+const useThreadsStats = ({ mailboxId, filter = {}, fields, enabled = true }: UseThreadsStatsOptions) => {
     const statsFields = combineStatsFields(fields);
     const { data } = useThreadsStatsRetrieve({
         mailbox_id: mailboxId,

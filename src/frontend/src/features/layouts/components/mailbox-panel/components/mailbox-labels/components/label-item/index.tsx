@@ -1,6 +1,6 @@
-import { TreeLabel, ThreadsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
+import { TreeLabel, LabelsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
-import { useThreadsStats } from "@/hooks/use-threads-stats";
+import { useLabelStats } from "@/hooks/use-labels-stats";
 import useArchive from "@/features/message/use-archive";
 import useDeleteLabel from "@/features/message/use-delete-label";
 import useAddLabel from "@/features/message/use-add-label";
@@ -41,10 +41,10 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const modals = useModals();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const stats = useThreadsStats({
+  const stats = useLabelStats({
     mailboxId: selectedMailbox?.id,
-    filter: { label_slug: label.slug },
-    fields: [ThreadsStatsRetrieveStatsFields.all_unread],
+    labelId: label.id,
+    fields: [LabelsStatsRetrieveStatsFields.all_unread],
   });
   const unreadCount = stats?.all_unread ?? 0;
   const { closeLeftPanel, setDragAction, getIsShiftHeld } = useLayoutDragContext();

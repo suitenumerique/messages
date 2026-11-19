@@ -41,7 +41,7 @@ const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: st
  * callback so they run for every caller, before its own `onSuccess`.
  */
 const useRead = () => {
-    const { selectedMailbox, pinThreads, patchMessages, invalidateThreadsStats } = useMailboxContext();
+    const { selectedMailbox, pinThreads, patchMessages, invalidateThreadsStats, invalidateLabelsStats } = useMailboxContext();
     const mailboxId = selectedMailbox?.id;
 
     const { mark, unmark, status } = useFlag('unread', {
@@ -76,6 +76,7 @@ const useRead = () => {
             });
 
             invalidateThreadsStats();
+            invalidateLabelsStats();
         },
     });
 

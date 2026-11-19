@@ -22,6 +22,12 @@ from rest_framework.response import Response
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import parse_search_query, search_threads
+from core.services.thread_stats import (
+    InvalidStatsFieldsError,
+    count_threads,
+    parse_stats_fields,
+    thread_state_annotations,
+)
 from core.services.trashbin import permanently_delete_messages
 
 from .. import permissions, serializers
@@ -222,36 +228,7 @@ class ThreadViewSet(
             can_edit_qs = can_edit_qs.filter(mailbox_id=mailbox_id)
 
         return queryset.annotate(
-            _has_unread=models.ThreadAccess.thread_unread_filter(user, mailbox_id),
-            _has_starred=models.ThreadAccess.thread_starred_filter(user, mailbox_id),
-            _has_unread_mention=Exists(
-                models.UserEvent.objects.filter(
-                    thread=OuterRef("pk"),
-                    user=user,
-                    type=enums.UserEventTypeChoices.MENTION,
-                    read_at__isnull=True,
-                )
-            ),
-            _has_mention=Exists(
-                models.UserEvent.objects.filter(
-                    thread=OuterRef("pk"),
-                    user=user,
-                    type=enums.UserEventTypeChoices.MENTION,
-                )
-            ),
-            _has_assigned_to_me=Exists(
-                models.UserEvent.objects.filter(
-                    thread=OuterRef("pk"),
-                    user=user,
-                    type=enums.UserEventTypeChoices.ASSIGN,
-                )
-            ),
-            _has_unassigned=~Exists(
-                models.UserEvent.objects.filter(
-                    thread=OuterRef("pk"),
-                    type=enums.UserEventTypeChoices.ASSIGN,
-                )
-            ),
+            **thread_state_annotations(user, mailbox_id),
             events_count=Count("events", distinct=True),
             _can_edit=Exists(can_edit_qs),
         ).prefetch_related(
@@ -475,133 +452,16 @@ class ThreadViewSet(
         # (``Thread.is_spam``) still holding an unflagged received message
         # (``has_active``). The Spam and Trash folders pass ``is_spam=1`` /
         # ``has_trashed=1`` explicitly, so they keep their own counts.
+        # Built before reading ``stats_fields``: it checks the mailbox access,
+        # whose 403 must win over a malformed request.
         queryset = self.get_queryset()
-        stats_fields_param = request.query_params.get("stats_fields", "")
-
-        if not stats_fields_param:
+        try:
+            fields = parse_stats_fields(request.query_params.get("stats_fields", ""))
+        except InvalidStatsFieldsError as error:
             return drf.response.Response(
-                {"detail": "Missing 'stats_fields' query parameter."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
+                {"detail": str(error)}, status=drf.status.HTTP_400_BAD_REQUEST
             )
-
-        requested_fields = [field.strip() for field in stats_fields_param.split(",")]
-
-        # Define valid base fields that can be counted.
-        # ``is_spam`` is deliberately absent: the queryset excludes spam by
-        # default, so the counter could only ever return 0 — or, with an
-        # explicit ``is_spam=1``, a duplicate of ``all``. Folders scope their
-        # counts through that query parameter instead (the Spam folder asks
-        # for ``is_spam=1&stats_fields=all_unread``).
-        valid_base_fields = {
-            "has_trashed",
-            "has_archived",
-            "has_draft",
-            "has_starred",
-            "has_attachments",
-            "has_sender",
-            "has_active",
-            "has_delivery_failed",
-            "has_delivery_pending",
-            "has_unread_mention",
-            "has_mention",
-            "has_assigned_to_me",
-            "has_unassigned",
-            "has_messages",
-        }
-
-        # Special fields
-        special_fields = {"all", "all_unread"}
-
-        # Base fields that cannot be combined with the "_unread" suffix because
-        # they are annotations (not real model columns) and their unread variant
-        # is either already exposed (has_unread_mention) or meaningless.
-        annotation_fields = {
-            "has_mention",
-            "has_unread_mention",
-            "has_assigned_to_me",
-            "has_unassigned",
-        }
-
-        # Validate requested fields
-        for field in requested_fields:
-            if field in special_fields:
-                continue
-            if field.endswith("_unread"):
-                # Extract base field name and validate
-                base_field = field[:-7]  # Remove "_unread" suffix
-                if base_field not in valid_base_fields:
-                    return drf.response.Response(
-                        {"detail": f"Invalid base field in '{field}': {base_field}"},
-                        status=drf.status.HTTP_400_BAD_REQUEST,
-                    )
-                if base_field in annotation_fields:
-                    return drf.response.Response(
-                        {"detail": f"Invalid field requested in stats_fields: {field}"},
-                        status=drf.status.HTTP_400_BAD_REQUEST,
-                    )
-            elif field in valid_base_fields:
-                continue
-            else:
-                return drf.response.Response(
-                    {"detail": f"Invalid field requested in stats_fields: {field}"},
-                    status=drf.status.HTTP_400_BAD_REQUEST,
-                )
-
-        # Build conditions from annotations (always available)
-        unread_condition = Q(_has_unread=True)
-        starred_condition = Q(_has_starred=True)
-        unread_mention_condition = Q(_has_unread_mention=True)
-        mention_condition = Q(_has_mention=True)
-        assigned_to_me_condition = Q(_has_assigned_to_me=True)
-        unassigned_condition = Q(_has_unassigned=True)
-
-        aggregations = {}
-        for field in requested_fields:
-            agg_key = f"count_{field}"
-
-            if field == "all":
-                aggregations[agg_key] = Count("pk")
-            elif field == "all_unread":
-                aggregations[agg_key] = Count("pk", filter=unread_condition)
-            elif field == "has_starred":
-                aggregations[agg_key] = Count("pk", filter=starred_condition)
-            elif field == "has_starred_unread":
-                aggregations[agg_key] = Count(
-                    "pk", filter=starred_condition & unread_condition
-                )
-            elif field == "has_unread_mention":
-                aggregations[agg_key] = Count("pk", filter=unread_mention_condition)
-            elif field == "has_mention":
-                aggregations[agg_key] = Count("pk", filter=mention_condition)
-            elif field == "has_assigned_to_me":
-                aggregations[agg_key] = Count("pk", filter=assigned_to_me_condition)
-            elif field == "has_unassigned":
-                aggregations[agg_key] = Count("pk", filter=unassigned_condition)
-            elif field.endswith("_unread"):
-                base_field = field[:-7]
-                base_condition = Q(**{base_field: True})
-                aggregations[agg_key] = Count(
-                    "pk", filter=base_condition & unread_condition
-                )
-            else:
-                aggregations[agg_key] = Count("pk", filter=Q(**{field: True}))
-
-        if not aggregations:
-            return drf.response.Response(
-                {"detail": "No valid fields provided in stats_fields."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
-
-        aggregated_data = queryset.aggregate(**aggregations)
-
-        # Map back to the original field names and replace None with 0
-        result = {}
-        for field in requested_fields:
-            agg_key = f"count_{field}"
-            value = aggregated_data.get(agg_key, 0)
-            result[field] = value if value is not None else 0
-
-        return drf.response.Response(result)
+        return drf.response.Response(count_threads(queryset, fields))
 
     @extend_schema(
         tags=["threads"],

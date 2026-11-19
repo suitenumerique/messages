@@ -6,6 +6,7 @@ import { useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-
 import usePrevious from "@/hooks/use-previous";
 import { useUrlSearchParams } from "@/hooks/use-url-search-params";
 import { getThreadsStatsQueryKey } from "@/hooks/use-threads-stats";
+import { invalidateLabelsStats as invalidateLabelsStatsQueries } from "@/hooks/use-labels-stats";
 import { MAILBOX_FOLDERS } from "../layouts/components/mailbox-panel/components/mailbox-list";
 import {
     getMailboxThreadsListQueryKeyPrefix,
@@ -72,7 +73,10 @@ type MailboxContextType = {
     invalidateMailbox: () => Promise<void>;
     invalidateThreadEvents: () => Promise<void>;
     invalidateThreadsList: () => Promise<void>;
+    /** Refetch the folder counts. */
     invalidateThreadsStats: () => Promise<void>;
+    /** Flag the label counts as outdated: call it only after a change that can move them. */
+    invalidateLabelsStats: () => Promise<void>;
     invalidateLabels: () => Promise<void>;
     /** Resolves (never rejects) with the query outcome, like a React Query refetch. */
     refetchMailboxes: (options?: RefetchOptions) => Promise<{ isError: boolean } | void>;
@@ -206,6 +210,7 @@ const MailboxContext = createContext<MailboxContextType>({
     invalidateThreadEvents: async () => {},
     invalidateThreadsList: async () => {},
     invalidateThreadsStats: async () => {},
+    invalidateLabelsStats: async () => {},
     invalidateLabels: async () => {},
     refetchMailboxes: async () => {},
     isPending: false,
@@ -566,13 +571,11 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
     const invalidateThreadsStats = async () => {
         await queryClient.invalidateQueries({
             queryKey: getThreadsStatsQueryKey(selectedMailbox?.id),
-            // Exclude per-label stats queries (`label_slug=…`) from the
-            // fan-out: a global invalidation would otherwise trigger one
-            // re-fetch per label in the sidebar, which is wasteful. Label
-            // counts stay fresh via their own targeted refetch paths
-            // (label mutations) and by the mailbox polling loop.
-            predicate: ({ queryKey }) => !(queryKey[queryKey.length - 1] as string).startsWith('label_slug=')
         });
+    }
+
+    const invalidateLabelsStats = async () => {
+        await invalidateLabelsStatsQueries(queryClient);
     }
 
     const invalidateLabels = async () => {
@@ -630,6 +633,7 @@ export const MailboxProvider = ({ children }: PropsWithChildren) => {
         invalidateThreadEvents,
         invalidateThreadsList,
         invalidateThreadsStats,
+        invalidateLabelsStats,
         invalidateLabels,
         refetchMailboxes: mailboxQuery.refetch,
         isPending: mailboxQuery.isPending || threadsQuery.isPending || messagesQuery.isPending,
