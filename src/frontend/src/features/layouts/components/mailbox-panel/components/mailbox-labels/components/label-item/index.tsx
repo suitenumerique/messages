@@ -1,4 +1,4 @@
-import { TreeLabel, LabelsStatsRetrieveStatsFields, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
+import { TreeLabel, LabelsStatsRetrieveStatsFieldsItem, useLabelsDestroy, useLabelsList, useLabelsPartialUpdate } from "@/features/api/gen";
 import { useMailboxContext } from "@/features/providers/mailbox";
 import { useLabelStats } from "@/hooks/use-labels-stats";
 import useArchive from "@/features/message/use-archive";
@@ -44,7 +44,7 @@ export const LabelItem = ({ level = 0, onEdit, canManage, defaultFoldState, ...l
   const stats = useLabelStats({
     mailboxId: selectedMailbox?.id,
     labelId: label.id,
-    fields: [LabelsStatsRetrieveStatsFields.all_unread],
+    fields: [LabelsStatsRetrieveStatsFieldsItem.all_unread],
   });
   const unreadCount = stats?.all_unread ?? 0;
   const { closeLeftPanel, setDragAction, getIsShiftHeld } = useLayoutDragContext();

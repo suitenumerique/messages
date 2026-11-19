@@ -1,4 +1,4 @@
-import { ThreadsStatsRetrieveStatsFields, useThreadsStatsRetrieve } from "@/features/api/gen";
+import { ThreadsStatsRetrieveStatsFieldsItem, useThreadsStatsRetrieve } from "@/features/api/gen";
 
 /**
  * Canonical query key for the threads stats query.
@@ -23,8 +23,8 @@ export const getThreadsStatsQueryKey = (
  * them are fetched in a single request shared by every consumer.
  */
 export type FolderStatsDefinition = {
-    count: ThreadsStatsRetrieveStatsFields;
-    extra?: readonly ThreadsStatsRetrieveStatsFields[];
+    count: ThreadsStatsRetrieveStatsFieldsItem;
+    extra?: readonly ThreadsStatsRetrieveStatsFieldsItem[];
 };
 
 type StatsFolder = {
@@ -35,23 +35,23 @@ type StatsFolder = {
 type UseThreadsStatsOptions = {
     mailboxId: string | undefined;
     filter?: Readonly<Record<string, string>>;
-    fields: readonly ThreadsStatsRetrieveStatsFields[];
+    fields: readonly ThreadsStatsRetrieveStatsFieldsItem[];
     enabled?: boolean;
 };
 
-const DEFAULT_FOLDER_STATS: FolderStatsDefinition = { count: ThreadsStatsRetrieveStatsFields.all_unread };
+const DEFAULT_FOLDER_STATS: FolderStatsDefinition = { count: ThreadsStatsRetrieveStatsFieldsItem.all_unread };
 
 /**
- * The API takes a comma-separated list of fields, which the generated type
- * does not model. Sorted so that the same set always yields the same key.
+ * Deduplicated and sorted, so that the same set of fields always yields the
+ * same request and cache key.
  */
 export const combineStatsFields = <TField extends string>(fields: readonly TField[]) =>
-    [...new Set(fields)].sort().join(',') as TField;
+    [...new Set(fields)].sort();
 
 const getStatsQueryParams = (
     filter: Readonly<Record<string, string>>,
-    statsFields: ThreadsStatsRetrieveStatsFields,
-) => new URLSearchParams({ ...filter, stats_fields: statsFields }).toString();
+    statsFields: readonly ThreadsStatsRetrieveStatsFieldsItem[],
+) => new URLSearchParams({ ...filter, stats_fields: statsFields.join(',') }).toString();
 
 const getFolderStatsFields = ({ stats = DEFAULT_FOLDER_STATS }: StatsFolder) =>
     [stats.count, ...(stats.extra ?? [])];

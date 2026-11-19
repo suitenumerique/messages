@@ -36,7 +36,12 @@ export default defineConfig({
                             useInfinite: true,
                             useInfiniteQueryParam: "page"
                         }
-                    }
+                    },
+                    // Orval repeats every array query parameter unless told
+                    // otherwise, whatever its `explode` in the schema: these
+                    // endpoints read `stats_fields` as one comma-separated value.
+                    "threads_stats_retrieve": { fetch: { explode: false } },
+                    "labels_stats_retrieve": { fetch: { explode: false } },
                 }
             },
         }

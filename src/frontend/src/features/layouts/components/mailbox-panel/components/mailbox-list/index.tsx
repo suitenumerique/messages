@@ -1,4 +1,4 @@
-import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFields } from "@/features/api/gen"
+import { Mailbox, ThreadsStatsRetrieve200, ThreadsStatsRetrieveStatsFieldsItem } from "@/features/api/gen"
 import { useMailboxContext } from "@/features/providers/mailbox"
 import { FolderStatsDefinition, useFolderStats } from "@/hooks/use-threads-stats"
 import clsx from "clsx"
@@ -65,7 +65,7 @@ const visibleIfSharedOrNonEmpty: FolderVisibilityRule = ({ mailbox, folderCount 
 // mentioned, even after the mentions are read.
 const visibleIfSharedOrHasMention: FolderVisibilityRule = ({ mailbox, folderStats }) =>
     mailbox.is_shared
-    || (folderStats?.[ThreadsStatsRetrieveStatsFields.has_mention] ?? 0) > 0;
+    || (folderStats?.[ThreadsStatsRetrieveStatsFieldsItem.has_mention] ?? 0) > 0;
 
 // Collaboration entries (e.g. "Unassigned") whose semantics require multiple
 // humans on the box: unavailable in mono-user identity mailboxes.
@@ -118,8 +118,8 @@ export const MAILBOX_FOLDERS = () => [
                 isVisible: visibleIfSharedOrHasMention,
                 // The badge counts unread mentions, visibility any mention.
                 stats: {
-                    count: ThreadsStatsRetrieveStatsFields.has_unread_mention,
-                    extra: [ThreadsStatsRetrieveStatsFields.has_mention],
+                    count: ThreadsStatsRetrieveStatsFieldsItem.has_unread_mention,
+                    extra: [ThreadsStatsRetrieveStatsFieldsItem.has_mention],
                 },
                 filter: {
                     has_active: "1",
@@ -134,7 +134,7 @@ export const MAILBOX_FOLDERS = () => [
                 showStats: true,
                 isAvailable: availableIfSharedOrAssigned,
                 isVisible: visibleIfSharedOrNonEmpty,
-                stats: { count: ThreadsStatsRetrieveStatsFields.all },
+                stats: { count: ThreadsStatsRetrieveStatsFieldsItem.all },
                 filter: {
                     has_assigned_to_me: "1",
                     has_active: "1",
@@ -147,7 +147,7 @@ export const MAILBOX_FOLDERS = () => [
                 searchable: false,
                 showStats: true,
                 isAvailable: availableInSharedMailbox,
-                stats: { count: ThreadsStatsRetrieveStatsFields.all },
+                stats: { count: ThreadsStatsRetrieveStatsFieldsItem.all },
                 filter: {
                     has_unassigned: "1",
                     has_active: "1",
@@ -161,7 +161,7 @@ export const MAILBOX_FOLDERS = () => [
         icon: { icon: Edit },
         searchable: true,
         showStats: true,
-        stats: { count: ThreadsStatsRetrieveStatsFields.all },
+        stats: { count: ThreadsStatsRetrieveStatsFieldsItem.all },
         filter: {
             has_draft: "1",
         },
@@ -174,8 +174,8 @@ export const MAILBOX_FOLDERS = () => [
         isVisible: visibleIfNonEmpty,
         showStats: true,
         stats: {
-            count: ThreadsStatsRetrieveStatsFields.all,
-            extra: [ThreadsStatsRetrieveStatsFields.has_delivery_failed],
+            count: ThreadsStatsRetrieveStatsFieldsItem.all,
+            extra: [ThreadsStatsRetrieveStatsFieldsItem.has_delivery_failed],
         },
         filter: {
             has_sender: "1",
@@ -211,8 +211,8 @@ export const MAILBOX_FOLDERS = () => [
         showStats: true,
         // The trashbin banner needs the whole folder count to offer emptying it.
         stats: {
-            count: ThreadsStatsRetrieveStatsFields.all_unread,
-            extra: [ThreadsStatsRetrieveStatsFields.all],
+            count: ThreadsStatsRetrieveStatsFieldsItem.all_unread,
+            extra: [ThreadsStatsRetrieveStatsFieldsItem.all],
         },
         filter: {
             is_spam: "1",
@@ -225,7 +225,7 @@ export const MAILBOX_FOLDERS = () => [
         searchable: true,
         // No badge, but the trashbin banner counts the folder to offer emptying it.
         showStats: false,
-        stats: { count: ThreadsStatsRetrieveStatsFields.all },
+        stats: { count: ThreadsStatsRetrieveStatsFieldsItem.all },
         filter: {
             has_trashed: "1",
         },
@@ -395,7 +395,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
     const isActive = isFolderActive(folder);
 
     const folderCount = count ?? 0;
-    const hasDeliveryFailed = (folderStats?.[ThreadsStatsRetrieveStatsFields.has_delivery_failed] ?? 0) > 0;
+    const hasDeliveryFailed = (folderStats?.[ThreadsStatsRetrieveStatsFieldsItem.has_delivery_failed] ?? 0) > 0;
 
     const handleDragOver = (e: React.DragEvent<HTMLAnchorElement>) => {
         // All folder actions (archive/spam/trash and restore-to-inbox)

@@ -47,6 +47,18 @@ SPECIAL_STATS_FIELDS = frozenset({"all", "all_unread"})
 
 UNREAD_SUFFIX = "_unread"
 
+# Every value ``stats_fields`` accepts, as the API schema advertises them.
+STATS_FIELDS = sorted(
+    SPECIAL_STATS_FIELDS
+    | COLUMN_STATS_FIELDS
+    | frozenset(ANNOTATED_STATS_FIELDS)
+    | {
+        f"{field}{UNREAD_SUFFIX}"
+        for field in COLUMN_STATS_FIELDS | frozenset(ANNOTATED_STATS_FIELDS)
+        if field not in NO_UNREAD_VARIANT_FIELDS
+    }
+)
+
 
 class InvalidStatsFieldsError(ValueError):
     """Raised when the requested ``stats_fields`` cannot be counted."""

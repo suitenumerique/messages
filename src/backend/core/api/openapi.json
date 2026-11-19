@@ -2180,17 +2180,38 @@
                         "in": "query",
                         "name": "stats_fields",
                         "schema": {
-                            "type": "string",
-                            "enum": [
-                                "all",
-                                "all_unread",
-                                "has_assigned_to_me",
-                                "has_delivery_failed",
-                                "has_delivery_pending",
-                                "has_mention",
-                                "has_unassigned",
-                                "has_unread_mention"
-                            ]
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "all",
+                                    "all_unread",
+                                    "has_active",
+                                    "has_active_unread",
+                                    "has_archived",
+                                    "has_archived_unread",
+                                    "has_assigned_to_me",
+                                    "has_attachments",
+                                    "has_attachments_unread",
+                                    "has_delivery_failed",
+                                    "has_delivery_failed_unread",
+                                    "has_delivery_pending",
+                                    "has_delivery_pending_unread",
+                                    "has_draft",
+                                    "has_draft_unread",
+                                    "has_mention",
+                                    "has_messages",
+                                    "has_messages_unread",
+                                    "has_sender",
+                                    "has_sender_unread",
+                                    "has_starred",
+                                    "has_starred_unread",
+                                    "has_trashed",
+                                    "has_trashed_unread",
+                                    "has_unassigned",
+                                    "has_unread_mention"
+                                ]
+                            }
                         },
                         "description": "Comma-separated list of fields to count per label, same values as `GET /threads/stats/`.",
                         "required": true,
@@ -7408,17 +7429,38 @@
                         "in": "query",
                         "name": "stats_fields",
                         "schema": {
-                            "type": "string",
-                            "enum": [
-                                "all",
-                                "all_unread",
-                                "has_assigned_to_me",
-                                "has_delivery_failed",
-                                "has_delivery_pending",
-                                "has_mention",
-                                "has_unassigned",
-                                "has_unread_mention"
-                            ]
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "all",
+                                    "all_unread",
+                                    "has_active",
+                                    "has_active_unread",
+                                    "has_archived",
+                                    "has_archived_unread",
+                                    "has_assigned_to_me",
+                                    "has_attachments",
+                                    "has_attachments_unread",
+                                    "has_delivery_failed",
+                                    "has_delivery_failed_unread",
+                                    "has_delivery_pending",
+                                    "has_delivery_pending_unread",
+                                    "has_draft",
+                                    "has_draft_unread",
+                                    "has_mention",
+                                    "has_messages",
+                                    "has_messages_unread",
+                                    "has_sender",
+                                    "has_sender_unread",
+                                    "has_starred",
+                                    "has_starred_unread",
+                                    "has_trashed",
+                                    "has_trashed_unread",
+                                    "has_unassigned",
+                                    "has_unread_mention"
+                                ]
+                            }
                         },
                         "description": "Comma-separated list of fields to aggregate.\n                Special values: 'all' (count all threads), 'all_unread' (count all unread threads).\n                Boolean fields: has_trashed, has_draft, has_starred, has_attachments, has_archived,\n                has_sender, has_active, has_delivery_pending, has_delivery_failed, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.\n                Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.\n                Examples: 'all,all_unread', 'has_starred,has_starred_unread'",
                         "required": true,

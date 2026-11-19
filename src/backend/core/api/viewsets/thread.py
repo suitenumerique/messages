@@ -23,6 +23,7 @@ from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
 from core.services.search import parse_search_query, search_threads
 from core.services.thread_stats import (
+    STATS_FIELDS,
     InvalidStatsFieldsError,
     count_threads,
     parse_stats_fields,
@@ -409,7 +410,8 @@ class ThreadViewSet(
                 has_sender, has_active, has_delivery_pending, has_delivery_failed, has_messages, has_unread_mention, has_mention, has_assigned_to_me, has_unassigned.
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
                 Examples: 'all,all_unread', 'has_starred,has_starred_unread'""",
-                enum=list(enums.THREAD_STATS_FIELDS_MAP.keys()),
+                many=True,
+                enum=STATS_FIELDS,
                 style="form",
                 explode=False,
             ),

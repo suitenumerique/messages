@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { LabelsStatsRetrieveStatsFields } from "./labels_stats_retrieve_stats_fields";
+import type { LabelsStatsRetrieveStatsFieldsItem } from "./labels_stats_retrieve_stats_fields_item";
 
 export type LabelsStatsRetrieveParams = {
   /**
@@ -15,5 +15,5 @@ export type LabelsStatsRetrieveParams = {
   /**
    * Comma-separated list of fields to count per label, same values as `GET /threads/stats/`.
    */
-  stats_fields: LabelsStatsRetrieveStatsFields;
+  stats_fields: LabelsStatsRetrieveStatsFieldsItem[];
 };

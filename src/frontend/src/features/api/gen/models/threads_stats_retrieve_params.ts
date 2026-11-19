@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { ThreadsStatsRetrieveStatsFields } from "./threads_stats_retrieve_stats_fields";
+import type { ThreadsStatsRetrieveStatsFieldsItem } from "./threads_stats_retrieve_stats_fields_item";
 
 export type ThreadsStatsRetrieveParams = {
   /**
@@ -76,5 +76,5 @@ export type ThreadsStatsRetrieveParams = {
                 Unread variants ('_unread' suffix): count threads where the condition is true AND the thread is unread.
                 Examples: 'all,all_unread', 'has_starred,has_starred_unread'
  */
-  stats_fields: ThreadsStatsRetrieveStatsFields;
+  stats_fields: ThreadsStatsRetrieveStatsFieldsItem[];
 };

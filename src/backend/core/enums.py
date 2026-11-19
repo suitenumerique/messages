@@ -155,18 +155,6 @@ class DKIMAlgorithmChoices(models.IntegerChoices):
     ED25519 = 2, "ed25519"
 
 
-THREAD_STATS_FIELDS_MAP = {
-    "all": "all",
-    "all_unread": "all_unread",
-    "has_delivery_pending": "has_delivery_pending",
-    "has_delivery_failed": "has_delivery_failed",
-    "has_unread_mention": "has_unread_mention",
-    "has_mention": "has_mention",
-    "has_assigned_to_me": "has_assigned_to_me",
-    "has_unassigned": "has_unassigned",
-}
-
-
 # Abilities
 class UserAbilities(models.TextChoices):
     """Defines the possible abilities a user can have."""

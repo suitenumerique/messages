@@ -20,6 +20,7 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.services.thread_stats import (
+    STATS_FIELDS,
     InvalidStatsFieldsError,
     count_threads_by_label,
     parse_stats_fields,
@@ -190,7 +191,8 @@ class LabelViewSet(
                     "Comma-separated list of fields to count per label, "
                     "same values as `GET /threads/stats/`."
                 ),
-                enum=[*enums.THREAD_STATS_FIELDS_MAP],
+                many=True,
+                enum=STATS_FIELDS,
                 style="form",
                 explode=False,
             ),

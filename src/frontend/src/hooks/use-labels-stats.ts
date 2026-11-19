@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { LabelsStatsRetrieveStatsFields, useLabelsStatsRetrieve } from "@/features/api/gen";
+import { LabelsStatsRetrieveStatsFieldsItem, useLabelsStatsRetrieve } from "@/features/api/gen";
 import { combineStatsFields } from "./use-threads-stats";
 
 /**
@@ -36,7 +36,7 @@ export const invalidateLabelsStats = (queryClient: QueryClient) =>
 type UseLabelStatsOptions = {
     mailboxId: string | undefined;
     labelId: string;
-    fields: readonly LabelsStatsRetrieveStatsFields[];
+    fields: readonly LabelsStatsRetrieveStatsFieldsItem[];
 };
 
 /**
@@ -52,7 +52,7 @@ export const useLabelStats = ({ mailboxId, labelId, fields }: UseLabelStatsOptio
     }, {
         query: {
             enabled: !!mailboxId,
-            queryKey: getLabelsStatsQueryKey(mailboxId, statsFields),
+            queryKey: getLabelsStatsQueryKey(mailboxId, statsFields.join(',')),
             // Unfolding a label mounts its children: reuse the counts.
             staleTime: LABELS_STATS_STALE_TIME,
             // Once invalidated, refetch when `LABELS_STATS_STALE_TIME` has

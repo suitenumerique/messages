@@ -2,7 +2,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LabelsStatsRetrieveStatsFields } from "@/features/api/gen";
+import {
+    getLabelsStatsRetrieveUrl,
+    getThreadsStatsRetrieveUrl,
+    LabelsStatsRetrieveStatsFieldsItem,
+    ThreadsStatsRetrieveStatsFieldsItem,
+} from "@/features/api/gen";
 import { invalidateLabelsStats, LABELS_STATS_STALE_TIME, useLabelStats } from "./use-labels-stats";
 import { getThreadsStatsQueryKey, useFolderStats } from "./use-threads-stats";
 
@@ -24,7 +29,7 @@ const LabelBadge = ({ mailboxId, labelId }: { mailboxId: string; labelId: string
     const stats = useLabelStats({
         mailboxId,
         labelId,
-        fields: [LabelsStatsRetrieveStatsFields.all_unread],
+        fields: [LabelsStatsRetrieveStatsFieldsItem.all_unread],
     });
     return <span data-testid={labelId}>{stats?.all_unread ?? 0}</span>;
 };
@@ -208,5 +213,23 @@ describe("useLabelStats", () => {
         expect(threadsStatsCalls()).toBe(2);
         expect(badge("inbox")).toBe("4");
         expect(labelsStatsCalls()).toBe(1);
+    });
+});
+
+describe("stats_fields serialization", () => {
+    // The backend reads a single comma-separated value: a repeated parameter
+    // would only count its last field.
+    it.each([
+        ["labels", () => getLabelsStatsRetrieveUrl({
+            mailbox_id: MAILBOX_ID,
+            stats_fields: [LabelsStatsRetrieveStatsFieldsItem.all, LabelsStatsRetrieveStatsFieldsItem.all_unread],
+        })],
+        ["threads", () => getThreadsStatsRetrieveUrl({
+            mailbox_id: MAILBOX_ID,
+            stats_fields: [ThreadsStatsRetrieveStatsFieldsItem.all, ThreadsStatsRetrieveStatsFieldsItem.all_unread],
+        })],
+    ])("sends the %s stats fields as one comma-separated value", (_, getUrl) => {
+        const params = new URL(getUrl(), "http://localhost").searchParams;
+        expect(params.getAll("stats_fields")).toEqual(["all,all_unread"]);
     });
 });
