@@ -12,8 +12,9 @@ import os
 
 import pytest
 
-from pymta import settings, tenants
+from pymta import settings
 from pymta.handler import InboundHandler
+from pymta.mda_async import MDAClient
 from pymta.tenants import SingleTenant, TenantRouter, build_router, domain_key
 
 from tests.harness import ScriptedMDA, connected, listening, records
@@ -238,10 +239,13 @@ async def test_without_a_tenants_file_everything_goes_to_the_one_mda(monkeypatch
 
 def test_with_a_tenants_file_recipients_are_routed(monkeypatch, tenants_file):
     monkeypatch.setattr(settings, "PYMTA_TENANTS_FILE", str(tenants_file))
-    monkeypatch.setattr(tenants, "MDAClient", TenantMDA)
     router = build_router()
     assert isinstance(router, TenantRouter)
-    assert router.route("x@b.example").tenant == "b"
+    route = router.route("x@b.example")
+    assert route.tenant == "b"
+    assert isinstance(route.mda, MDAClient)
+    assert route.mda.base_url == "http://backend.b.svc:8000/api/v1.0/"
+    assert route.mda.secret == _tenant("b")["secret"]
 
 
 # ---------------------------------------------------------------------------
