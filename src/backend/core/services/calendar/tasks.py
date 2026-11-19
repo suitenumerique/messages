@@ -1,7 +1,13 @@
 """Celery tasks for CalDAV calendar operations."""
 
+import time
+import uuid
+from contextlib import contextmanager
 from typing import Any, Dict
 
+from django.core.cache import cache
+
+from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 from sentry_sdk import capture_exception
 
@@ -24,6 +30,13 @@ logger = get_task_logger(__name__)
 _RSVP_FAILURE = "Failed to send the RSVP."
 _ADD_FAILURE = "Failed to add the event to the calendar."
 _APPLY_REPLY_FAILURE = "Failed to apply the inbound RSVP reply."
+
+# Seconds. The apply task stops then, before its lock ends.
+_APPLY_REPLY_TIME_LIMIT = 240
+# Seconds. The lock of a worker that stops in the middle of a reply ends then.
+_APPLY_REPLY_LOCK_TTL = 300
+# Seconds that a task waits for the lock before it retries later.
+_APPLY_REPLY_LOCK_WAIT = 20
 
 
 def _get_caldav_service(channel_id: str | None, user_email: str):
@@ -133,6 +146,37 @@ def calendar_rsvp_task(
         }
 
 
+@contextmanager
+def _apply_reply_lock(organizer_email: str):
+    """Let one task at a time apply a reply to the calendar of one organizer.
+
+    Two replies for one event can arrive in the same second. Google sends one
+    email for the series and one for each changed occurrence. SabreDAV does
+    not make ``If-Match`` atomic: two writes that overlap both succeed, and the
+    second write removes the answer of the first one.
+
+    The time limit of the task is shorter than the lock, so the lock does not
+    end while its task runs.
+
+    Raises CalDAVTransientError when the lock stays busy, so that the task
+    retries later.
+    """
+    key = f"calendar_apply_reply_lock:{organizer_email}"
+    token = uuid.uuid4().hex
+    deadline = time.monotonic() + _APPLY_REPLY_LOCK_WAIT
+    while not cache.add(key, token, _APPLY_REPLY_LOCK_TTL):
+        if time.monotonic() >= deadline:
+            raise CalDAVTransientError("Another reply is in progress")
+        time.sleep(0.2)
+    try:
+        yield
+    finally:
+        # A worker pool without time limits can let the lock end first. Then
+        # the lock belongs to another task: do not remove it.
+        if cache.get(key) == token:
+            cache.delete(key)
+
+
 # ignore_result: this task is fire-and-forget from the inbound hook (never
 # polled), and its args carry the raw REPLY ICS + addresses — keeping them out
 # of the result backend avoids persisting that content there.
@@ -142,10 +186,12 @@ def calendar_rsvp_task(
 @celery_app.task(
     bind=True,
     ignore_result=True,
-    autoretry_for=(CalDAVTransientError,),
+    autoretry_for=(CalDAVTransientError, SoftTimeLimitExceeded),
     retry_backoff=30,
     retry_backoff_max=600,
     max_retries=5,
+    soft_time_limit=_APPLY_REPLY_TIME_LIMIT,
+    time_limit=_APPLY_REPLY_TIME_LIMIT + 30,
 )
 def calendar_apply_reply_task(
     self,  # pylint: disable=unused-argument
@@ -192,17 +238,18 @@ def calendar_apply_reply_task(
         }
 
     try:
-        result = service.apply_reply(
-            ics_data=ics_data,
-            attendee_email=attendee_email,
-            organizer_email=organizer_email,
-        )
+        with _apply_reply_lock(organizer_email or user_email):
+            result = service.apply_reply(
+                ics_data=ics_data,
+                attendee_email=attendee_email,
+                organizer_email=organizer_email,
+            )
         return {
             "status": "SUCCESS",
             "result": result,
             "error": None,
         }
-    except CalDAVTransientError:
+    except (CalDAVTransientError, SoftTimeLimitExceeded):
         raise
     except CalDAVError as e:
         logger.warning("Apply-reply failed: %s", e)

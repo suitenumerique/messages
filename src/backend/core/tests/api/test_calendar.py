@@ -13,6 +13,7 @@ from urllib.parse import quote
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 from django.conf import settings as django_settings
+from django.core.cache import cache
 
 import jwt
 import pytest
@@ -20,6 +21,7 @@ import radicale.app
 import radicale.config
 import requests
 import requests.adapters
+from celery.exceptions import SoftTimeLimitExceeded
 from icalendar import Calendar as ICalendar
 from jmap_email import parse_email
 from rest_framework.test import APIClient
@@ -3250,6 +3252,56 @@ def test_apply_reply_task_retries_a_transient_caldav_error():
 def test_apply_reply_task_does_not_retry_a_permanent_caldav_error():
     apply_reply = _run_apply_reply_task([CalDAVError("forbidden", status_code=403)])
     assert apply_reply.call_count == 1
+
+
+def test_apply_reply_task_holds_a_lock_for_the_organizer():
+    key = "calendar_apply_reply_lock:user@example.com"
+    seen = []
+
+    def apply_reply(**_kwargs):
+        seen.append(cache.get(key))
+        return {"applied": True, "reason": "applied"}
+
+    _run_apply_reply_task(apply_reply)
+
+    assert seen != [None]
+    assert cache.get(key) is None
+
+
+def test_apply_reply_task_keeps_the_lock_of_another_task():
+    key = "calendar_apply_reply_lock:user@example.com"
+
+    def apply_reply(**_kwargs):
+        # The lock of this task ends, and another task takes it.
+        cache.set(key, "another-task", 60)
+        return {"applied": True, "reason": "applied"}
+
+    try:
+        _run_apply_reply_task(apply_reply)
+        assert cache.get(key) == "another-task"
+    finally:
+        cache.delete(key)
+
+
+def test_apply_reply_task_retries_after_its_time_limit():
+    apply_reply = _run_apply_reply_task(
+        [SoftTimeLimitExceeded(), {"applied": True, "reason": "applied"}]
+    )
+    assert apply_reply.call_count == 2
+
+
+def test_apply_reply_task_does_not_apply_while_another_task_holds_the_lock():
+    key = "calendar_apply_reply_lock:user@example.com"
+    cache.add(key, "locked", 60)
+    try:
+        with mock.patch("core.services.calendar.tasks._APPLY_REPLY_LOCK_WAIT", 0):
+            apply_reply = _run_apply_reply_task(
+                [{"applied": True, "reason": "applied"}]
+            )
+        assert apply_reply.call_count == 0
+        assert cache.get(key) == "locked"
+    finally:
+        cache.delete(key)
 
 
 @pytest.mark.parametrize(
