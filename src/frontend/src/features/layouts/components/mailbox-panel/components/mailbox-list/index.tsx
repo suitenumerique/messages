@@ -29,6 +29,10 @@ type FolderVisibilityContext = {
 
 type FolderVisibilityRule = (ctx: FolderVisibilityContext) => boolean;
 
+// Judged from the mailbox alone, before any stats: an unavailable folder is
+// neither shown nor counted, so it costs no stats request.
+type FolderAvailabilityRule = (mailbox: Mailbox) => boolean;
+
 // @TODO: replace with real data when folder will be ready
 type Folder = {
     id: string;
@@ -39,6 +43,7 @@ type Folder = {
     // Defaults to counting unread threads.
     stats?: FolderStatsDefinition;
     searchable?: boolean;
+    isAvailable?: FolderAvailabilityRule;
     isVisible?: FolderVisibilityRule;
     children?: Folder[];
 }
@@ -46,10 +51,6 @@ type Folder = {
 // Hidden when empty — used for transient queues like the outbox that should
 // disappear when nothing is in flight.
 const visibleIfNonEmpty: FolderVisibilityRule = ({ folderCount }) => folderCount > 0;
-
-// Hidden in mono-user identity mailboxes — used for collaboration entries
-// (e.g. "Unassigned") whose semantics require multiple humans on the box.
-const visibleIfSharedMailbox: FolderVisibilityRule = ({ mailbox }) => mailbox.is_shared;
 
 // Hidden in mono-user identity mailboxes unless the folder already has
 // content — used for entries (e.g. "Assigned to me") that only matter in
@@ -65,6 +66,15 @@ const visibleIfSharedOrNonEmpty: FolderVisibilityRule = ({ mailbox, folderCount 
 const visibleIfSharedOrHasMention: FolderVisibilityRule = ({ mailbox, folderStats }) =>
     mailbox.is_shared
     || (folderStats?.[ThreadsStatsRetrieveStatsFields.has_mention] ?? 0) > 0;
+
+// Collaboration entries (e.g. "Unassigned") whose semantics require multiple
+// humans on the box: unavailable in mono-user identity mailboxes.
+const availableInSharedMailbox: FolderAvailabilityRule = (mailbox) => mailbox.is_shared;
+
+// The mailbox assigned count includes every thread "Assigned to me" lists, so
+// a mono-user mailbox without assignment cannot fill the folder.
+const availableIfSharedOrAssigned: FolderAvailabilityRule = (mailbox) =>
+    mailbox.is_shared || mailbox.count_assigned > 0;
 
 export const MAILBOX_FOLDERS = () => [
     {
@@ -122,6 +132,7 @@ export const MAILBOX_FOLDERS = () => [
                 icon: { name: "assign" },
                 searchable: false,
                 showStats: true,
+                isAvailable: availableIfSharedOrAssigned,
                 isVisible: visibleIfSharedOrNonEmpty,
                 stats: { count: ThreadsStatsRetrieveStatsFields.all },
                 filter: {
@@ -135,7 +146,7 @@ export const MAILBOX_FOLDERS = () => [
                 icon: { name: "person_off" },
                 searchable: false,
                 showStats: true,
-                isVisible: visibleIfSharedMailbox,
+                isAvailable: availableInSharedMailbox,
                 stats: { count: ThreadsStatsRetrieveStatsFields.all },
                 filter: {
                     has_unassigned: "1",
@@ -340,7 +351,10 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
     const { markAsTrashed, markAsUntrashed } = useTrash();
     const { markAsSpam, markAsNotSpam } = useSpam();
 
-    const { stats: folderStats, count } = useFolderStats(selectedMailbox?.id, folder, { enabled: folder.showStats });
+    const isAvailable = !selectedMailbox || !folder.isAvailable || folder.isAvailable(selectedMailbox);
+    const { stats: folderStats, count } = useFolderStats(selectedMailbox?.id, folder, {
+        enabled: folder.showStats && isAvailable,
+    });
 
     // View checks for determining allowed actions (same logic as thread-panel-header.tsx)
     const { isTrashedView, isSpamView, isArchivedView, isDraftsView, isSentView } = useCurrentView();
@@ -484,6 +498,7 @@ const FolderItem = ({ folder, isChild, hasChildren, isExpanded, onToggleExpand, 
         }
     };
 
+    if (!isAvailable) return null;
     if (folder.isVisible && selectedMailbox && !folder.isVisible({
         mailbox: selectedMailbox,
         folderCount,
