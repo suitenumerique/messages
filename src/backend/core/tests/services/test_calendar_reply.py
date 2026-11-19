@@ -226,6 +226,16 @@ def test_parse_refuses_an_invalid_recurrence_id():
     assert CalDAVService._parse_reply(ics, ATTENDEE) == (None, "unparseable-reply")
 
 
+def test_parse_does_not_match_a_letter_that_lowers_to_ascii():
+    # ``str.lower()`` maps U+212A KELVIN SIGN to "k".
+    ics = _reply((None, "ACCEPTED", 0)).replace(ATTENDEE, "nick@example.com")
+
+    assert CalDAVService._parse_reply(ics, "nic\u212a@example.com") == (
+        None,
+        "attendee-mismatch",
+    )
+
+
 def test_parse_reads_the_answer_in_upper_case():
     reply, _ = CalDAVService._parse_reply(_reply((None, "accepted", 0)), ATTENDEE)
 

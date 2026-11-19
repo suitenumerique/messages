@@ -63,7 +63,7 @@ class ITIPMethod(StrEnum):
     DECLINECOUNTER = "DECLINECOUNTER"
 
 
-def _attendee_key(value) -> str:
+def attendee_key(value) -> str:
     """Canonical identity for an ICS ATTENDEE or a calendar owner address.
 
     Drops the ``mailto:`` URI prefix, ASCII-folds the local part and
@@ -502,7 +502,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # The identity a copy in this calendar speaks for: its owner
             # when the server exposes it, otherwise the acting mailbox
             # (servers without owner metadata behave as before).
-            # ASCII fold only, not the full ``_attendee_key``: this becomes a
+            # ASCII fold only, not the full ``attendee_key``: this becomes a
             # key in the ``existing_partstats`` payload and the client looks
             # its own identity up in it, with no way to punycode a domain. The
             # matching below still uses the full key on both sides.
@@ -546,7 +546,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                if _attendee_key(att) == _attendee_key(attendee_email_lc):
+                if attendee_key(att) == attendee_key(attendee_email_lc):
                     val = att.params.get("PARTSTAT")
                     return str(val) if val else None
         return None
@@ -788,7 +788,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         ``recurrence-not-supported`` when an answer is for a range of
         occurrences.
         """
-        target = (attendee_email or "").strip().lower()
+        target = attendee_key(attendee_email)
         if not target:
             return None, "attendee-mismatch"
         try:
@@ -812,10 +812,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 attendees = [attendees]
             partstat = None
             for att in attendees:
-                addr = str(att).strip().lower()
-                if addr.startswith("mailto:"):
-                    addr = addr[len("mailto:") :]
-                if addr == target:
+                if attendee_key(att) == target:
                     partstat = str(att.params.get("PARTSTAT") or "").upper()
                     break
             if partstat not in _REPLY_PARTSTATS:
@@ -880,7 +877,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         if reply is None:
             return {"applied": False, "reason": reason}
 
-        organizer_norm = (organizer_email or "").strip().lower()
+        organizer_norm = attendee_key(organizer_email)
         start, end = self._reply_query_window(reply)
 
         for calendar in self.list_calendars(writable_only=True):
@@ -905,15 +902,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def _event_organizer(cal):
-        """Bare (mailto-stripped, lower-cased) ORGANIZER of the first VEVENT."""
+        """Return the canonical address of the ORGANIZER of the first VEVENT."""
         for comp in cal.walk("VEVENT"):
             org = comp.get("ORGANIZER")
-            if org is None:
-                continue
-            addr = str(org).strip().lower()
-            if addr.startswith("mailto:"):
-                addr = addr[len("mailto:") :]
-            return addr
+            if org is not None:
+                return attendee_key(org)
         return ""
 
     def _apply_reply_to_resource(self, resource_url, stored, etag, reply):
@@ -1045,11 +1038,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def _attendees(event, attendee_email):
         """Return the ATTENDEE properties of one VEVENT for this address."""
-        target = _attendee_key(attendee_email)
+        target = attendee_key(attendee_email)
         attendees = event.get("ATTENDEE") or []
         if not isinstance(attendees, list):
             attendees = [attendees]
-        return [att for att in attendees if _attendee_key(att) == target]
+        return [att for att in attendees if attendee_key(att) == target]
 
     @staticmethod
     def _partstat(event, attendee_email):
@@ -1150,7 +1143,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         from "no-op write" — for ``respond_to_event``, a False result
         means the iTIP REPLY would never reach the organizer.
         """
-        target = _attendee_key(attendee_email)
+        target = attendee_key(attendee_email)
         updated = False
         for comp in cal.walk("VEVENT"):
             attendees = comp.get("ATTENDEE")
@@ -1159,7 +1152,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                if _attendee_key(att) != target:
+                if attendee_key(att) != target:
                     continue
                 att.params["PARTSTAT"] = new_partstat
                 att.params.pop("RSVP", None)

@@ -5,6 +5,8 @@ import logging
 from icalendar import Calendar as ICalendar
 from jmap_email import body_part_text, first_address_email
 
+from core.services.calendar.service import attendee_key
+
 logger = logging.getLogger(__name__)
 
 _VERDICT_UNVERIFIED = "none"
@@ -82,7 +84,7 @@ def reply_partstat(ics_text, addr):
 
     Never returns another attendee's PARTSTAT — a REPLY may list several.
     """
-    target = (addr or "").strip().lower()
+    target = attendee_key(addr)
     if not target:
         return None
     try:
@@ -97,10 +99,7 @@ def reply_partstat(ics_text, addr):
             attendees = [attendees]
         matched = None
         for att in attendees:
-            a = str(att).strip().lower()
-            if a.startswith("mailto:"):
-                a = a[len("mailto:") :]
-            if a == target:
+            if attendee_key(att) == target:
                 ps = att.params.get("PARTSTAT")
                 matched = str(ps) if ps else None
                 break  # first address match wins, mirroring _parse_reply
@@ -134,7 +133,9 @@ def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
     ics = find_reply_ics(parsed_email)
     if ics is None:
         return None, None, None
-    from_addr = (first_address_email(parsed_email.get("from")) or "").strip().lower()
+    # Not ``str.lower()``: it maps some non-ASCII letters to ASCII letters, and
+    # the sender would then match the address of another attendee.
+    from_addr = attendee_key(first_address_email(parsed_email.get("from")))
     if not from_addr:
         return None, None, None
     if reply_partstat(ics, from_addr) is None:
