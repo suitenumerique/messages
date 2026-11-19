@@ -2888,10 +2888,10 @@ class TestApplyReply:
             "NEEDS-ACTION"
         )
 
-    def test_recurrence_instance_reply_is_noop(
+    def test_reply_to_one_occurrence_of_a_single_event_is_noop(
         self, caldav_channel, radicale_with_calendar
     ):
-        _, put_event = radicale_with_calendar
+        calendar_url, put_event = radicale_with_calendar
         uid = "apply-recur@example.com"
         self._seed(put_event, uid)
         service = CalDAVService.from_channel(caldav_channel)
@@ -2903,6 +2903,7 @@ class TestApplyReply:
 
         assert result["applied"] is False
         assert result["reason"] == "recurrence-not-supported"
+        assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
 
     def test_unparseable_reply_reason(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
@@ -2925,7 +2926,7 @@ class TestApplyReply:
         )
         parsed, reason = CalDAVService._parse_reply(reply, self.ATTENDEE)
         assert reason is None
-        assert parsed["partstat"] == "ACCEPTED"
+        assert parsed["answers"][0]["partstat"] == "ACCEPTED"
 
     def test_no_etag_refuses_unconditional_write(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
@@ -3147,6 +3148,57 @@ def test_reply_with_an_empty_sequence_is_applied(
 
 
 @pytest.mark.django_db()
+def test_reply_to_a_moved_occurrence_updates_its_exception(
+    caldav_channel, radicale_with_calendar
+):
+    calendar_url, put_event = radicale_with_calendar
+    uid = "apply-series@example.com"
+    attendee = TestApplyReply.ATTENDEE
+    series = _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=attendee)
+    exception = (
+        series.split("BEGIN:VEVENT")[1]
+        .split("END:VEVENT")[0]
+        .replace("DTSTART:20260601T100000Z", "DTSTART:20260608T140000Z")
+        .replace("DTEND:20260601T110000Z", "DTEND:20260608T150000Z")
+        .replace("SEQUENCE:0", "SEQUENCE:1\nRECURRENCE-ID:20260608T100000Z")
+    )
+    put_event(
+        uid,
+        series.replace("SEQUENCE:0", "SEQUENCE:0\nRRULE:FREQ=WEEKLY;COUNT=8").replace(
+            "END:VCALENDAR", f"BEGIN:VEVENT{exception}END:VEVENT\nEND:VCALENDAR"
+        ),
+    )
+    service = CalDAVService.from_channel(caldav_channel)
+
+    # The reply has the new time of the occurrence, as the attendee sees it.
+    reply = (
+        _REPLY_EVENT.format(
+            uid=uid,
+            seq=1,
+            dtstamp="20260102T000000Z",
+            partstat="DECLINED",
+            attendee=attendee,
+        )
+        .replace("DTSTART:20260601T100000Z", "DTSTART:20260608T140000Z")
+        .replace("DTEND:20260601T110000Z", "DTEND:20260608T150000Z")
+        .replace("SEQUENCE:1", "SEQUENCE:1\nRECURRENCE-ID:20260608T100000Z")
+    )
+    result = service.apply_reply(reply, attendee_email=attendee)
+
+    assert result == {"applied": True, "reason": "applied"}
+    resp = requests.get(
+        calendar_url.rstrip("/") + f"/{uid}.ics",
+        auth=(RADICALE_USER, RADICALE_PASSWORD),
+        timeout=5,
+    )
+    partstats = {
+        "RECURRENCE-ID" in event: _attendee_partstat(event, attendee)
+        for event in ICalendar.from_ical(resp.text).walk("VEVENT")
+    }
+    assert partstats == {False: "NEEDS-ACTION", True: "DECLINED"}
+
+
+@pytest.mark.django_db()
 def test_enqueue_itip_reply_fans_out_to_mailbox_users(mailbox):
     u1 = factories.UserFactory()
     u2 = factories.UserFactory()
@@ -3274,18 +3326,6 @@ def test_request_marks_network_errors_as_transient():
     ):
         with pytest.raises(CalDAVTransientError):
             service._request("GET", "http://caldav.example/event.ics")
-
-
-def test_mark_replied_matches_sabredav():
-    cal = ICalendar.from_ical(
-        _ORGANIZER_EVENT.format(uid="mark", seq=0, attendee="a@b.example")
-    )
-    assert CalDAVService._update_partstat(cal, "a@b.example", "ACCEPTED")
-    CalDAVService._mark_replied(cal, "A@B.example")
-    att = cal.walk("VEVENT")[0]["ATTENDEE"]
-    att = att if not isinstance(att, list) else att[0]
-    assert att.params["SCHEDULE-STATUS"] == "2.0"
-    assert "RSVP" not in att.params
 
 
 _INBOUND_REPLY_EML = """\

@@ -151,23 +151,13 @@ class TestEvaluateInboundReply:
         parsed = _parsed(REQUEST_ICS, "org@example.com")
         assert itip.evaluate_inbound_reply(parsed, None, False) == (None, None, None)
 
-    def test_recurrence_instance_rejected_at_gate(self):
+    def test_reply_to_one_occurrence_passes_the_gate(self):
         ics = REPLY_ICS.replace(
             "SEQUENCE:0", "SEQUENCE:0\nRECURRENCE-ID:20260601T100000Z"
         )
         parsed = _parsed(ics, "alice@corp.example")
-        assert itip.evaluate_inbound_reply(parsed, None, False) == (None, None, None)
-
-
-class TestRecurrenceDetection:
-    def test_detects_recurrence_id(self):
-        ics = REPLY_ICS.replace(
-            "SEQUENCE:0", "SEQUENCE:0\nRECURRENCE-ID:20260601T100000Z"
+        assert itip.evaluate_inbound_reply(parsed, None, False) == (
+            ics,
+            itip.FLAG_VERIFIED,
+            "alice@corp.example",
         )
-        assert itip.reply_is_recurrence_instance(ics) is True
-
-    def test_plain_reply_is_not_recurrence(self):
-        assert itip.reply_is_recurrence_instance(REPLY_ICS) is False
-
-    def test_unparseable_is_not_recurrence(self):
-        assert itip.reply_is_recurrence_instance("nope") is False
