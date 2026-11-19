@@ -10,6 +10,8 @@ import json
 import logging
 import os
 
+import httpx
+import jwt
 import pytest
 
 from pymta import settings
@@ -246,6 +248,30 @@ def test_with_a_tenants_file_recipients_are_routed(monkeypatch, tenants_file):
     assert isinstance(route.mda, MDAClient)
     assert route.mda.base_url == "http://backend.b.svc:8000/api/v1.0/"
     assert route.mda.secret == _tenant("b")["secret"]
+
+
+@pytest.mark.asyncio
+async def test_each_tenant_signs_its_calls_with_its_own_secret(tenants_file):
+    router = TenantRouter(str(tenants_file))
+    requests: list[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        (address,) = json.loads(request.content)["addresses"]
+        return httpx.Response(200, json={address: True})
+
+    for name in ("a", "b"):
+        mda = router.route(f"x@{name}.example").mda
+        mda._client = httpx.AsyncClient(transport=httpx.MockTransport(answer))
+        assert (await mda.check_recipient(f"x@{name}.example")).ok
+
+    for request, (own, other) in zip(requests, [("a", "b"), ("b", "a")], strict=True):
+        assert request.url == f"http://backend.{own}.svc:8000/api/v1.0/inbound/mta/check/"
+        token = request.headers["Authorization"].removeprefix("Bearer ")
+        jwt.decode(token, _tenant(own)["secret"], algorithms=["HS256"])
+        with pytest.raises(jwt.InvalidSignatureError):
+            jwt.decode(token, _tenant(other)["secret"], algorithms=["HS256"])
+    await router.close()
 
 
 # ---------------------------------------------------------------------------
