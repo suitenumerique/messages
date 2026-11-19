@@ -109,15 +109,6 @@ def reply_partstat(ics_text, addr):
     return None
 
 
-def reply_is_recurrence_instance(ics_text):
-    """True if any VEVENT carries a RECURRENCE-ID (single-instance reply)."""
-    try:
-        cal = ICalendar.from_ical(ics_text)
-    except Exception:  # pylint: disable=broad-exception-caught
-        return False
-    return any(c.get("RECURRENCE-ID") is not None for c in cal.walk("VEVENT"))
-
-
 def decide(auth_verdict, apply_unverified):
     """Trust decision from the sender-auth verdict → ``(should_apply, flag)``.
 
@@ -148,11 +139,6 @@ def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
         return None, None, None
     if reply_partstat(ics, from_addr) is None:
         logger.info("iTIP REPLY From is not an RSVPing attendee; skipping")
-        return None, None, None
-    # Reject recurrence-instance replies at the gate (no flag, no fan-out); the
-    # service keeps its own check as defense in depth.
-    if reply_is_recurrence_instance(ics):
-        logger.info("iTIP REPLY targets a recurrence instance; skipping")
         return None, None, None
     should_apply, flag = decide(auth_verdict, apply_unverified)
     if not should_apply:
