@@ -6,13 +6,17 @@ events, add event, RSVP) directly over HTTP using ``requests`` and
 library's dependency surface.
 """
 
+# pylint: disable=too-many-lines
+
+import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
+from django.core.cache import cache
 
 import defusedxml.ElementTree as ET
 import requests
@@ -21,6 +25,7 @@ from icalendar import Calendar as ICalendar
 
 from core.mda.addresses import ascii_lower, normalize_address
 from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.recurrence import recurrence_key
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -46,7 +51,7 @@ LASUITE_NS = "http://lasuite.numerique.gouv.fr/ns/"
 _HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
-def _attendee_key(value) -> str:
+def attendee_key(value) -> str:
     """Canonical identity for an ICS ATTENDEE or a calendar owner address.
 
     Drops the ``mailto:`` URI prefix, ASCII-folds the local part and
@@ -60,6 +65,44 @@ def _attendee_key(value) -> str:
     if ascii_lower(address).startswith("mailto:"):
         address = address[len("mailto:") :]
     return normalize_address(address)
+
+
+# Answers that a REPLY can give. A delegation (DELEGATED) is not supported.
+_REPLY_PARTSTATS = frozenset({"ACCEPTED", "DECLINED", "TENTATIVE"})
+
+# Seconds. Longer than the time in which the apply task retries a reply.
+_REPLY_ORDER_TTL = 24 * 3600
+
+
+def _date_value(prop):
+    """Return the date or date-time of a property, or None when it has none."""
+    value = getattr(prop, "dt", None)
+    return value if isinstance(value, date) else None
+
+
+def _sequence(component):
+    """Return the SEQUENCE of a component, or 0 when it has no valid one.
+
+    SabreDAV writes an empty SEQUENCE in the REPLY to an event that has none.
+    """
+    try:
+        return int(component.get("SEQUENCE"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _occurrence_key(recurrence_id):
+    """Return the key of the occurrence, or None when there is no RECURRENCE-ID."""
+    return None if recurrence_id is None else recurrence_key(recurrence_id)
+
+
+def _reply_order_key(resource_url, attendee):
+    """Return the cache key of the arrival times of replies.
+
+    There is one key for each attendee of each stored event.
+    """
+    digest = hashlib.sha256(f"{resource_url}\n{attendee}".encode()).hexdigest()
+    return f"calendar_reply_order:{digest}"
 
 
 def _q(ns, tag):
@@ -85,6 +128,13 @@ class CalDAVError(Exception):
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class CalDAVTransientError(CalDAVError):
+    """CalDAV failure that can succeed on a later attempt.
+
+    Covers network failures, rate limits (429) and server errors (5xx).
+    """
 
 
 class CalDAVService:  # pylint: disable=too-many-instance-attributes
@@ -187,9 +237,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # Surface network-level failures (timeout, connection reset, DNS,
             # SSL) as CalDAVError so callers can handle them uniformly with
             # protocol errors instead of leaking ``requests`` exceptions.
-            raise CalDAVError(f"{method} {url} failed: {exc}") from exc
+            raise CalDAVTransientError(f"{method} {url} failed: {exc}") from exc
         if resp.status_code >= 400:
-            raise CalDAVError(
+            transient = resp.status_code == 429 or resp.status_code >= 500
+            raise (CalDAVTransientError if transient else CalDAVError)(
                 f"{method} {url} failed: HTTP {resp.status_code}",
                 status_code=resp.status_code,
             )
@@ -451,7 +502,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # The identity a copy in this calendar speaks for: its owner
             # when the server exposes it, otherwise the acting mailbox
             # (servers without owner metadata behave as before).
-            # ASCII fold only, not the full ``_attendee_key``: this becomes a
+            # ASCII fold only, not the full ``attendee_key``: this becomes a
             # key in the ``existing_partstats`` payload and the client looks
             # its own identity up in it, with no way to punycode a domain. The
             # matching below still uses the full key on both sides.
@@ -495,7 +546,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                if _attendee_key(att) == _attendee_key(attendee_email_lc):
+                if attendee_key(att) == attendee_key(attendee_email_lc):
                     val = att.params.get("PARTSTAT")
                     return str(val) if val else None
         return None
@@ -530,6 +581,72 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             for r in root.findall(_q(DAV_NS, "response"))
             if (data := r.findtext(data_key))
         ]
+
+    def _calendar_query_detailed(self, calendar_url, start, end):
+        """Like ``_calendar_query`` but yields ``(href, etag, calendar_data)``.
+
+        The href is the event's real resource path and the etag its version —
+        both needed to write back to the right resource with If-Match.
+        """
+        body = (
+            '<?xml version="1.0"?>'
+            '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+            "<d:prop><d:getetag/><c:calendar-data/></d:prop>"
+            "<c:filter>"
+            '<c:comp-filter name="VCALENDAR">'
+            '<c:comp-filter name="VEVENT">'
+            f'<c:time-range start="{_format_utc(start)}" end="{_format_utc(end)}"/>'
+            "</c:comp-filter>"
+            "</c:comp-filter>"
+            "</c:filter>"
+            "</c:calendar-query>"
+        )
+        resp = self._request(
+            "REPORT",
+            calendar_url,
+            data=body.encode("utf-8"),
+            headers={
+                "Depth": "1",
+                "Content-Type": "application/xml; charset=utf-8",
+            },
+        )
+        root = ET.fromstring(resp.text)
+        data_key = f".//{_q(CALDAV_NS, 'calendar-data')}"
+        etag_key = f".//{_q(DAV_NS, 'getetag')}"
+        out = []
+        for r in root.findall(_q(DAV_NS, "response")):
+            href = r.findtext(_q(DAV_NS, "href"))
+            data = r.findtext(data_key)
+            if href and data:
+                # REPORT hrefs are relative to the request URI; resolve against
+                # the queried calendar URL (absolute hrefs pass through unchanged)
+                # so the follow-up GET/PUT hits the right resource.
+                resource_url = urljoin(calendar_url, href.strip())
+                out.append((resource_url, (r.findtext(etag_key) or "").strip(), data))
+        return out
+
+    def _put_resource(self, resource_url, ics_data, etag=None):
+        """PUT to an existing resource URL, optionally If-Match ``etag``.
+
+        Raises ``CalDAVError(status_code=412)`` when the precondition fails.
+        """
+        data = ics_data.encode("utf-8") if isinstance(ics_data, str) else ics_data
+        headers = {"Content-Type": "text/calendar; charset=utf-8"}
+        if etag:
+            headers["If-Match"] = etag
+        self._request("PUT", resource_url, data=data, headers=headers)
+
+    def _get_resource(self, resource_url):
+        """Return ``(ics_text, etag)`` for a resource, or ``(None, None)`` if gone."""
+        try:
+            resp = self._request(
+                "GET", resource_url, headers={"Accept": "text/calendar"}
+            )
+        except CalDAVError as exc:
+            if exc.status_code == 404:
+                return None, None
+            raise
+        return resp.text, (resp.headers.get("ETag") or "").strip()
 
     @staticmethod
     def _summarize_event(ics_text, calendar_name):
@@ -643,6 +760,397 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         )
         return True
 
+    # Max span of the (attacker-controlled) reply time-range REPORT window.
+    _MAX_QUERY_SPAN_DAYS = 366
+
+    @staticmethod
+    def _parse_reply(ics_data, attendee_email):
+        """Return ``(reply, None)`` for a usable REPLY, else ``(None, reason)``.
+
+        The reply has one answer for each VEVENT in which ``attendee_email`` is
+        an ATTENDEE with an answer. The PARTSTAT of another ATTENDEE is never
+        read. The first of these VEVENTs gives the UID and the time of the
+        reply. A VEVENT with a different UID gives no answer.
+
+        The reason is ``unparseable-reply`` for a bad ICS, or when the UID, the
+        DTSTART or a RECURRENCE-ID is absent or invalid. It is
+        ``attendee-mismatch`` when the attendee gives no PARTSTAT that can be
+        applied: ACCEPTED, DECLINED or TENTATIVE. It is
+        ``recurrence-not-supported`` when an answer is for a range of
+        occurrences.
+        """
+        target = attendee_key(attendee_email)
+        if not target:
+            return None, "attendee-mismatch"
+        try:
+            cal = ICalendar.from_ical(ics_data)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Could not parse inbound iTIP REPLY", exc_info=True)
+            return None, "unparseable-reply"
+        reply = {}
+        saw_uid = False
+        for comp in cal.walk("VEVENT"):
+            uid = comp.get("UID")
+            if not uid:
+                continue
+            saw_uid = True
+            if reply and str(uid) != reply["uid"]:
+                continue
+            attendees = comp.get("ATTENDEE")
+            if attendees is None:
+                continue
+            if not isinstance(attendees, list):
+                attendees = [attendees]
+            partstat = None
+            for att in attendees:
+                if attendee_key(att) == target:
+                    partstat = str(att.params.get("PARTSTAT") or "").upper()
+                    break
+            if partstat not in _REPLY_PARTSTATS:
+                continue
+            recurrence_id = comp.get("RECURRENCE-ID")
+            if recurrence_id is not None:
+                if _date_value(recurrence_id) is None:
+                    return None, "unparseable-reply"
+                if recurrence_id.params.get("RANGE"):
+                    return None, "recurrence-not-supported"
+            if not reply:
+                start = _date_value(comp.get("DTSTART"))
+                if start is None:
+                    # RFC 5546 makes DTSTART optional in a REPLY, but in practice
+                    # every mainstream client echoes it; without it we can't bound
+                    # the calendar-query REPORT, so reject rather than scan every
+                    # calendar over an unbounded window. If minimal replies ever
+                    # turn up in the field, a bounded (~±60 day) fallback is the
+                    # escape hatch.
+                    return None, "unparseable-reply"
+                reply = {
+                    "uid": str(uid),
+                    "attendee": target,
+                    "start": start,
+                    "end": _date_value(comp.get("DTEND")),
+                    "answers": [],
+                }
+            reply["answers"].append(
+                {
+                    "recurrence_id": _date_value(recurrence_id),
+                    "partstat": partstat,
+                    "sequence": _sequence(comp),
+                }
+            )
+        if reply:
+            return reply, None
+        return None, ("attendee-mismatch" if saw_uid else "unparseable-reply")
+
+    def apply_reply(
+        self, ics_data, attendee_email, organizer_email=None, received_at=None
+    ):
+        """Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's stored event.
+
+        Mirror of ``respond_to_event``. Only ever modifies the ATTENDEE matching
+        ``attendee_email`` (the caller's authenticated sender), reading its
+        PARTSTAT from that same entry — so a crafted multi-ATTENDEE payload can't
+        move a third party. When ``organizer_email`` is given, only a stored copy
+        whose ORGANIZER matches it is updated — so a same-UID copy on which the
+        mailbox is merely an ATTENDEE (not the organizer) is skipped. Returns
+        ``{"applied": bool, "reason": str}``; never raises for expected no-ops.
+
+        An answer with RECURRENCE-ID goes to the exception of that occurrence,
+        as in SabreDAV. An answer without RECURRENCE-ID goes to the series.
+        Unlike SabreDAV, it also goes to the exceptions that the reply does not
+        name, see ``_apply_series_answer``.
+
+        ``received_at`` is the time when the mailbox received the reply, in
+        seconds. The apply task can retry an old reply after a new one. A reply
+        does not change an occurrence that has an answer from a reply that
+        arrived later: the reason is ``superseded``.
+
+        Does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
+        controls the messages that an attendee's server sends to the organizer
+        (RFC 6638 §7.1). It does not stop the updates to attendees. It also
+        stays in the stored event: an attendee copy that receives it sends no
+        REPLY for later answers.
+        """
+        reply, reason = self._parse_reply(ics_data, attendee_email)
+        if reply is None:
+            return {"applied": False, "reason": reason}
+
+        reply["received_at"] = received_at
+        organizer_norm = attendee_key(organizer_email)
+        start, end = self._reply_query_window(reply)
+
+        for calendar in self.list_calendars(writable_only=True):
+            for resource_url, etag, stored_ics in self._calendar_query_detailed(
+                calendar["id"], start, end
+            ):
+                try:
+                    stored = ICalendar.from_ical(stored_ics)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.debug("Skipping unparseable stored event", exc_info=True)
+                    continue
+                if not self._event_has_uid(stored, reply["uid"]):
+                    continue
+                # Only touch the copy the mailbox actually organizes — skip a
+                # same-UID copy where it's merely an attendee, keep searching.
+                if organizer_norm and self._event_organizer(stored) != organizer_norm:
+                    continue
+                return self._apply_reply_to_resource(resource_url, stored, etag, reply)
+
+        logger.info("No stored event matches iTIP REPLY UID %s", reply["uid"])
+        return {"applied": False, "reason": "no-matching-event"}
+
+    @staticmethod
+    def _event_organizer(cal):
+        """Return the canonical address of the ORGANIZER of the first VEVENT."""
+        for comp in cal.walk("VEVENT"):
+            org = comp.get("ORGANIZER")
+            if org is not None:
+                return attendee_key(org)
+        return ""
+
+    def _apply_reply_to_resource(self, resource_url, stored, etag, reply):
+        """Mutate ``stored`` for the reply and conditional-PUT to its resource.
+
+        If-Match on ``etag`` guards the lost-update race (concurrent replies, or
+        a reply racing the organizer's own edit). On 412 the resource is
+        re-fetched and the mutation re-applied once, then it gives up with
+        ``concurrent-modification``.
+        """
+        if not etag:
+            # The REPORT returned no etag; fetch one so the write stays
+            # conditional. Never PUT unconditionally — that would silently drop
+            # lost-update protection.
+            fresh_ics, etag = self._get_resource(resource_url)
+            if not etag or fresh_ics is None:
+                logger.warning(
+                    "No etag for %s; refusing unconditional iTIP write", resource_url
+                )
+                return {"applied": False, "reason": "no-etag"}
+            try:
+                stored = ICalendar.from_ical(fresh_ics)
+            except Exception:  # pylint: disable=broad-exception-caught
+                return {"applied": False, "reason": "no-etag"}
+        order_key = _reply_order_key(resource_url, reply["attendee"])
+        order = cache.get(order_key) or {}
+        received_at = reply.get("received_at")
+        # The occurrences that have an answer from a reply that arrived later.
+        newer = {
+            key
+            for key, at in order.items()
+            if received_at is not None and at > received_at
+        }
+        for attempt in (1, 2):
+            outcomes = self._apply_answers(stored, reply, newer)
+            # A shared mailbox gets one apply task per user, and a relay can
+            # deliver the same reply twice. Do not write an event that did not
+            # change: each write makes the server process it for scheduling.
+            if "applied" not in outcomes:
+                self._record_arrival(order_key, order, reply, outcomes)
+                return {"applied": False, "reason": outcomes[0]}
+            # The stored event comes from the organizer's calendar, not from the
+            # email. Write it back whole. ``rebuild_for_storage`` is for untrusted
+            # input: it removes alarms, attachments and X- properties.
+            body = stored.to_ical().decode("utf-8")
+            try:
+                self._put_resource(resource_url, body, etag)
+                self._record_arrival(order_key, order, reply, outcomes)
+                return {"applied": True, "reason": "applied"}
+            except CalDAVError as exc:
+                if exc.status_code != 412:
+                    raise
+                if attempt == 2:
+                    return {"applied": False, "reason": "concurrent-modification"}
+                fresh_ics, etag = self._get_resource(resource_url)
+                if fresh_ics is None:
+                    return {"applied": False, "reason": "concurrent-modification"}
+                if not etag:
+                    # As before the first attempt: never PUT without If-Match.
+                    logger.warning(
+                        "No etag for %s; refusing unconditional iTIP write",
+                        resource_url,
+                    )
+                    return {"applied": False, "reason": "no-etag"}
+                try:
+                    stored = ICalendar.from_ical(fresh_ics)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    return {"applied": False, "reason": "concurrent-modification"}
+        return {"applied": False, "reason": "concurrent-modification"}
+
+    @staticmethod
+    def _record_arrival(order_key, order, reply, outcomes):
+        """Record when the reply arrived, for each occurrence that it answers.
+
+        ``order`` gives the arrival time of the last reply for each occurrence.
+        An answer that changes nothing is recorded too: it is in effect.
+        """
+        received_at = reply.get("received_at")
+        if received_at is None:
+            return
+        for answer, outcome in zip(reply["answers"], outcomes, strict=True):
+            if outcome in ("applied", "unchanged"):
+                order[_occurrence_key(answer["recurrence_id"])] = received_at
+        cache.set(order_key, order, _REPLY_ORDER_TTL)
+
+    def _apply_answers(self, stored, reply, newer=frozenset()):
+        """Apply each answer of the reply to its VEVENT in ``stored``, in-place.
+
+        ``newer`` holds the occurrences that have an answer from a reply that
+        arrived later. An answer for one of them is ``superseded``.
+
+        Returns the outcome of each answer: ``applied``, or the reason why the
+        answer changes nothing.
+        """
+        events = {}
+        for comp in stored.walk("VEVENT"):
+            if str(comp.get("UID") or "") != reply["uid"]:
+                continue
+            recurrence_id = comp.get("RECURRENCE-ID")
+            key = None if recurrence_id is None else recurrence_key(recurrence_id.dt)
+            events[key] = comp
+
+        answers = [
+            (_occurrence_key(answer["recurrence_id"]), answer)
+            for answer in reply["answers"]
+        ]
+        named = {key for key, _ in answers}
+
+        attendee = reply["attendee"]
+        outcomes = []
+        for key, answer in answers:
+            if key not in events:
+                outcome = (
+                    "no-matching-event" if key is None else "recurrence-not-supported"
+                )
+            elif key in newer:
+                outcome = "superseded"
+            elif key is None:
+                outcome = self._apply_series_answer(
+                    events, named | newer, attendee, answer
+                )
+            else:
+                outcome = self._apply_answer(events[key], attendee, answer)
+            outcomes.append(outcome)
+        return outcomes
+
+    def _apply_series_answer(self, events, skipped, attendee_email, answer):
+        """Set the answer of the attendee on the series, in-place.
+
+        The answer also goes to each exception that is not in ``skipped``: the
+        occurrences that the reply names, and those that have a newer answer.
+        Some clients, such as Outlook, send only the series VEVENT to answer
+        for all the occurrences. An exception takes the answer when the
+        attendee has no answer there, or has the answer that the series had. A
+        different answer for one occurrence stays.
+
+        The SEQUENCE of the answer is the SEQUENCE of the series. It is not
+        compared with the SEQUENCE of an exception. A moved occurrence often
+        has a higher SEQUENCE than its series, and a reply for the series does
+        not contain it.
+
+        Returns ``applied`` when a VEVENT changes, else the reason why the
+        series does not change.
+        """
+        series = events[None]
+        before = self._partstat(series, attendee_email)
+        outcome = self._apply_answer(series, attendee_email, answer)
+        if outcome not in ("applied", "unchanged"):
+            return outcome
+        for key, exception in events.items():
+            if key in skipped:
+                continue
+            current = self._partstat(exception, attendee_email)
+            if current not in ("NEEDS-ACTION", before):
+                continue
+            changed = self._set_partstat(exception, attendee_email, answer["partstat"])
+            if changed == "applied":
+                outcome = "applied"
+        return outcome
+
+    @staticmethod
+    def _apply_answer(event, attendee_email, answer):
+        """Set the answer of the attendee on one VEVENT, in-place.
+
+        Returns ``applied``, or the reason why the VEVENT does not change. An
+        answer to an older SEQUENCE of the VEVENT is stale.
+        """
+        if answer["sequence"] < _sequence(event):
+            return "stale-sequence"
+        return CalDAVService._set_partstat(event, attendee_email, answer["partstat"])
+
+    @staticmethod
+    def _attendees(event, attendee_email):
+        """Return the ATTENDEE properties of one VEVENT for this address."""
+        target = attendee_key(attendee_email)
+        attendees = event.get("ATTENDEE") or []
+        if not isinstance(attendees, list):
+            attendees = [attendees]
+        return [att for att in attendees if attendee_key(att) == target]
+
+    @staticmethod
+    def _partstat(event, attendee_email):
+        """Return the PARTSTAT of the attendee on one VEVENT.
+
+        An attendee without PARTSTAT has NEEDS-ACTION, as in RFC 5545. Returns
+        None when the attendee is not on the VEVENT.
+        """
+        attendees = CalDAVService._attendees(event, attendee_email)
+        if not attendees:
+            return None
+        return str(attendees[0].params.get("PARTSTAT") or "NEEDS-ACTION").upper()
+
+    @staticmethod
+    def _set_partstat(event, attendee_email, partstat):
+        """Set the PARTSTAT of the attendee on one VEVENT, in-place.
+
+        Returns ``applied``, or the reason why the VEVENT does not change. Like
+        SabreDAV, records the answer with SCHEDULE-STATUS=2.0 and removes RSVP.
+        """
+        attendees = CalDAVService._attendees(event, attendee_email)
+        if not attendees:
+            return "attendee-not-on-event"
+        if all(str(att.params.get("PARTSTAT") or "") == partstat for att in attendees):
+            return "unchanged"
+        for att in attendees:
+            att.params["PARTSTAT"] = partstat
+            att.params.pop("RSVP", None)
+            att.params["SCHEDULE-STATUS"] = "2.0"
+        return "applied"
+
+    @staticmethod
+    def _event_has_uid(cal, uid):
+        for comp in cal.walk("VEVENT"):
+            if str(comp.get("UID") or "") == uid:
+                return True
+        return False
+
+    def _reply_query_window(self, reply):
+        """(start, end) TZ-aware UTC window (± a day) around the reply's event
+        time. DTSTART is guaranteed present by ``_parse_reply``.
+
+        DTSTART/DTEND are attacker-controlled, so the window is normalized
+        (inverted ranges collapsed), the span capped, and the ± day padding
+        clamped to safe absolute bounds to avoid datetime over/underflow.
+        """
+        start = self._as_utc(reply["start"])
+        end = self._as_utc(reply["end"] or reply["start"])
+        end = max(end, start)
+        max_span = timedelta(days=self._MAX_QUERY_SPAN_DAYS)
+        if end - start > max_span:
+            end = start + max_span
+        floor = datetime(1, 1, 2, tzinfo=timezone.utc)
+        ceil = datetime(9999, 12, 30, tzinfo=timezone.utc)
+        start = max(min(start, ceil), floor) - timedelta(days=1)
+        end = min(max(end, floor), ceil) + timedelta(days=1)
+        return start, end
+
+    @staticmethod
+    def _as_utc(dt):
+        if not isinstance(dt, datetime):
+            dt = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
+        elif dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     @staticmethod
     def _set_schedule_agent_client(cal):
         """Stamp ``SCHEDULE-AGENT=CLIENT`` on every ORGANIZER (RFC 6638 §7.1).
@@ -677,7 +1185,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         from "no-op write" — for ``respond_to_event``, a False result
         means the iTIP REPLY would never reach the organizer.
         """
-        target = _attendee_key(attendee_email)
+        target = attendee_key(attendee_email)
         updated = False
         for comp in cal.walk("VEVENT"):
             attendees = comp.get("ATTENDEE")
@@ -686,7 +1194,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if not isinstance(attendees, list):
                 attendees = [attendees]
             for att in attendees:
-                if _attendee_key(att) != target:
+                if attendee_key(att) != target:
                     continue
                 att.params["PARTSTAT"] = new_partstat
                 att.params.pop("RSVP", None)
