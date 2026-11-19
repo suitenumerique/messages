@@ -1,10 +1,12 @@
 """Tests for how an iTIP REPLY changes the VEVENTs of a recurring event."""
 # pylint: disable=protected-access, missing-function-docstring
 
+from unittest import mock
+
 import pytest
 from icalendar import Calendar as ICalendar
 
-from core.services.calendar.service import CalDAVService
+from core.services.calendar.service import CalDAVError, CalDAVService
 
 ATTENDEE = "attendee@example.com"
 OTHER = "other@example.com"
@@ -234,6 +236,25 @@ def test_parse_does_not_match_a_letter_that_lowers_to_ascii():
         None,
         "attendee-mismatch",
     )
+
+
+RESOURCE = "http://caldav.example/cal/series.ics"
+
+
+def test_write_is_not_tried_again_without_an_etag():
+    service = CalDAVService(url="http://caldav.example/")
+    reply, _reason = CalDAVService._parse_reply(_reply((None, "ACCEPTED", 0)), ATTENDEE)
+    conflict = CalDAVError("precondition failed", status_code=412)
+    with (
+        mock.patch.object(service, "_put_resource", side_effect=conflict) as put,
+        mock.patch.object(service, "_get_resource", return_value=(SERIES, None)),
+    ):
+        result = service._apply_reply_to_resource(
+            RESOURCE, ICalendar.from_ical(SERIES), '"1"', reply
+        )
+
+    assert result == {"applied": False, "reason": "no-etag"}
+    assert put.call_count == 1
 
 
 def test_parse_reads_the_answer_in_upper_case():
