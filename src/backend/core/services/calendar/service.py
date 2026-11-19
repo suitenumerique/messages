@@ -809,9 +809,14 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         PARTSTAT from that same entry — so a crafted multi-ATTENDEE payload can't
         move a third party. When ``organizer_email`` is given, only a stored copy
         whose ORGANIZER matches it is updated — so a same-UID copy on which the
-        mailbox is merely an ATTENDEE (not the organizer) is skipped. Stamps
-        ``SCHEDULE-AGENT=CLIENT`` to stop server-side iTIP re-fanout. Returns
+        mailbox is merely an ATTENDEE (not the organizer) is skipped. Returns
         ``{"applied": bool, "reason": str}``; never raises for expected no-ops.
+
+        Does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
+        controls the messages that an attendee's server sends to the organizer
+        (RFC 6638 §7.1). It does not stop the updates to attendees. It also
+        stays in the stored event: an attendee copy that receives it sends no
+        REPLY for later answers.
         """
         reply, reason = self._parse_reply(ics_data, attendee_email)
         if reply is None:
@@ -888,11 +893,20 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             stale = self._reply_is_stale(stored, reply)
             if stale:
                 return {"applied": False, "reason": stale}
+            # A shared mailbox gets one apply task per user, and a relay can
+            # deliver the same reply twice. Do not write the same answer again:
+            # each write makes the server process the event for scheduling.
+            if self._attendee_partstats(stored, reply["attendee"]) == {
+                reply["partstat"]
+            }:
+                return {"applied": False, "reason": "unchanged"}
             if not self._update_partstat(stored, reply["attendee"], reply["partstat"]):
                 return {"applied": False, "reason": "attendee-not-on-event"}
             self._mark_replied(stored, reply["attendee"])
-            self._set_schedule_agent_client(stored)
-            body = rebuild_for_storage(stored).to_ical().decode("utf-8")
+            # The stored event comes from the organizer's calendar, not from the
+            # email. Write it back whole. ``rebuild_for_storage`` is for untrusted
+            # input: it removes alarms, attachments and X- properties.
+            body = stored.to_ical().decode("utf-8")
             try:
                 self._put_resource(resource_url, body, etag)
                 return {"applied": True, "reason": "applied"}
@@ -909,6 +923,22 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 except Exception:  # pylint: disable=broad-exception-caught
                     return {"applied": False, "reason": "concurrent-modification"}
         return {"applied": False, "reason": "concurrent-modification"}
+
+    @staticmethod
+    def _attendee_partstats(cal, attendee_email):
+        """Return the PARTSTAT values of the attendee across the VEVENTs."""
+        target = _attendee_key(attendee_email)
+        partstats = set()
+        for comp in cal.walk("VEVENT"):
+            attendees = comp.get("ATTENDEE")
+            if attendees is None:
+                continue
+            if not isinstance(attendees, list):
+                attendees = [attendees]
+            for att in attendees:
+                if _attendee_key(att) == target:
+                    partstats.add(str(att.params.get("PARTSTAT") or ""))
+        return partstats
 
     @staticmethod
     def _event_has_uid(cal, uid):

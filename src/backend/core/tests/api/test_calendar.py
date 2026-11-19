@@ -2713,7 +2713,44 @@ class TestApplyReply:
         assert result["applied"] is True
         assert self._fetch_partstat(calendar_url, uid) == "ACCEPTED"
 
-    def test_sets_schedule_agent_client(self, caldav_channel, radicale_with_calendar):
+    def test_keeps_the_rest_of_the_stored_event(
+        self, caldav_channel, radicale_with_calendar
+    ):
+        calendar_url, put_event = radicale_with_calendar
+        uid = "apply-keep@example.com"
+        put_event(
+            uid,
+            _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=self.ATTENDEE).replace(
+                "END:VEVENT",
+                "X-LS-NOTE:Bring the slides\n"
+                "CONFERENCE;VALUE=URI:https://visio.example.com/room\n"
+                "BEGIN:VALARM\n"
+                "ACTION:DISPLAY\n"
+                "DESCRIPTION:Reminder\n"
+                "TRIGGER:-PT15M\n"
+                "END:VALARM\n"
+                "END:VEVENT",
+            ),
+        )
+        service = CalDAVService.from_channel(caldav_channel)
+
+        result = service.apply_reply(
+            self._reply(uid, "ACCEPTED"), attendee_email=self.ATTENDEE
+        )
+
+        assert result["applied"] is True
+        resp = requests.get(
+            calendar_url.rstrip("/") + f"/{uid}.ics",
+            auth=(RADICALE_USER, RADICALE_PASSWORD),
+            timeout=5,
+        )
+        vevent = ICalendar.from_ical(resp.text).walk("VEVENT")[0]
+        assert _attendee_partstat(vevent, self.ATTENDEE) == "ACCEPTED"
+        assert str(vevent["X-LS-NOTE"]) == "Bring the slides"
+        assert str(vevent["CONFERENCE"]) == "https://visio.example.com/room"
+        assert len(vevent.walk("VALARM")) == 1
+
+    def test_does_not_set_schedule_agent(self, caldav_channel, radicale_with_calendar):
         calendar_url, put_event = radicale_with_calendar
         uid = "apply-sa@example.com"
         self._seed(put_event, uid)
@@ -2727,7 +2764,7 @@ class TestApplyReply:
             timeout=5,
         )
         vevent = ICalendar.from_ical(resp.text).walk("VEVENT")[0]
-        assert vevent.get("ORGANIZER").params.get("SCHEDULE-AGENT") == "CLIENT"
+        assert "SCHEDULE-AGENT" not in vevent.get("ORGANIZER").params
 
     def test_attendee_not_on_event_is_noop(
         self, caldav_channel, radicale_with_calendar
@@ -2771,6 +2808,22 @@ class TestApplyReply:
         assert result["applied"] is False
         assert result["reason"] == "stale-sequence"
         assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
+
+    def test_same_answer_is_not_written_again(
+        self, caldav_channel, radicale_with_calendar
+    ):
+        _, put_event = radicale_with_calendar
+        uid = "apply-twice@example.com"
+        self._seed(put_event, uid)
+        service = CalDAVService.from_channel(caldav_channel)
+        reply = self._reply(uid, "ACCEPTED")
+        assert service.apply_reply(reply, attendee_email=self.ATTENDEE)["applied"]
+
+        with mock.patch.object(service, "_put_resource") as put_resource:
+            result = service.apply_reply(reply, attendee_email=self.ATTENDEE)
+
+        assert result == {"applied": False, "reason": "unchanged"}
+        put_resource.assert_not_called()
 
     def test_replies_apply_in_arrival_order(
         self, caldav_channel, radicale_with_calendar
