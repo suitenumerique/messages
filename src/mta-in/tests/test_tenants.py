@@ -6,6 +6,7 @@ with one scripted MDA per tenant.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -362,3 +363,21 @@ async def test_the_reply_covers_every_tenant(routed, caplog, answers, reply, out
     # The line names the first tenant that did not take it.
     failed = "a" if answers[0] != "ok" else "b"
     assert line.tenant == failed
+
+
+@pytest.mark.asyncio
+async def test_a_slow_tenant_gets_the_sender_a_451_although_another_tenant_took_the_message(
+    monkeypatch, routed
+):
+    monkeypatch.setattr(settings, "PYMTA_DATA_TIMEOUT", settings.PYMTA_REPLY_RESERVE_SECONDS + 1)
+    handler, mdas = routed
+
+    async def stall(**_):
+        await asyncio.sleep(30)
+
+    mdas["b"].delivers = [stall]
+    async with listening(handler=handler) as port, connected(port) as client:
+        _, reply = await _send(client, [b"slow@b.example", b"second@a.example"])
+    (call,) = mdas["a"].delivered
+    assert call["original_recipients"] == ["second@a.example"]
+    assert reply.startswith(b"451 4.3.0 Delivery timed out"), reply
