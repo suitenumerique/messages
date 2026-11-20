@@ -758,6 +758,8 @@ class TestMailDomainUsersMetrics:
 
         siret = "12345678901234"
 
+        # A minute before each cutoff, not a second: the request computes its
+        # own "now", which a busy run reaches more than a second later.
         create_models_from_config(
             [
                 {
@@ -769,7 +771,7 @@ class TestMailDomainUsersMetrics:
                                     "user": UserFactory(),
                                     "accessed_at": timezone.now()
                                     - timezone.timedelta(
-                                        days=364, hours=23, minutes=59, seconds=59
+                                        days=364, hours=23, minutes=59
                                     ),
                                 },
                             ]
@@ -779,9 +781,7 @@ class TestMailDomainUsersMetrics:
                                 {
                                     "user": UserFactory(),
                                     "accessed_at": timezone.now()
-                                    - timezone.timedelta(
-                                        days=29, hours=23, minutes=59, seconds=59
-                                    ),
+                                    - timezone.timedelta(days=29, hours=23, minutes=59),
                                 },
                             ]
                         },
@@ -790,9 +790,7 @@ class TestMailDomainUsersMetrics:
                                 {
                                     "user": UserFactory(),
                                     "accessed_at": timezone.now()
-                                    - timezone.timedelta(
-                                        days=6, hours=23, minutes=59, seconds=59
-                                    ),
+                                    - timezone.timedelta(days=6, hours=23, minutes=59),
                                 },
                             ]
                         },

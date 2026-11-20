@@ -65,7 +65,6 @@ Usage:
     python manage.py backfill_thread_snippets --reset      # clear only, then exit
 """
 
-import datetime
 import logging
 import os
 import signal
@@ -77,11 +76,11 @@ from concurrent.futures import ThreadPoolExecutor
 from django.core.cache import cache
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Case, Q, Value, When
-from django.utils.dateparse import parse_datetime
 
 from core import models
 from core.enums import BlobStorageLocationChoices
 from core.mda.utils import message_snippet
+from core.utils import parse_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -114,19 +113,11 @@ def _rss_mb():
 
 
 def _parse_cutoff(raw, label):
-    """Coerce an ISO date/datetime string into an aware UTC datetime."""
-    cutoff = parse_datetime(raw)
+    """Coerce an ISO date/datetime string into an aware UTC datetime; a bare
+    date or no offset is read as UTC."""
+    cutoff = parse_utc_datetime(raw)
     if cutoff is None:
-        try:
-            # Bare date → midnight UTC.
-            cutoff = datetime.datetime.fromisoformat(raw).replace(tzinfo=datetime.UTC)
-        except ValueError as exc:
-            raise CommandError(
-                f"{label} {raw} is not a valid ISO date/datetime"
-            ) from exc
-    elif cutoff.tzinfo is None:
-        # Datetime without offset → assume UTC.
-        cutoff = cutoff.replace(tzinfo=datetime.UTC)
+        raise CommandError(f"{label} {raw} is not a valid ISO date/datetime")
     return cutoff
 
 

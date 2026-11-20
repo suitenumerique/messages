@@ -128,6 +128,20 @@ class TestChannelCreate:
         assert channel.mailbox == mailbox
         assert channel.type == "widget"
 
+    @pytest.mark.parametrize("settings", [["x"], [], "x"])
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
+    def test_create_channel_settings_not_an_object(self, api_client, mailbox, settings):
+        """Settings that are not an object are refused, not a 500 now or
+        when they are read with ``.get`` later."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        data = {"name": "My Widget", "type": "widget", "settings": settings}
+
+        response = api_client.post(url, data, format="json")
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "settings" in response.data
+        assert not models.Channel.objects.filter(name="My Widget").exists()
+
     @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["widget"])
     def test_create_channel_with_tags(self, api_client, mailbox):
         """Test creating a widget channel with tags."""
@@ -590,6 +604,38 @@ class TestChannelReservedSettingsKeys:
         # we still assert the encrypted_settings shape).
         assert "api_key_hashes" in channel.encrypted_settings
         assert "api_key_hashes" not in channel.settings
+
+    @override_settings(FEATURE_MAILBOX_ADMIN_CHANNELS=["api_key"])
+    @pytest.mark.parametrize(
+        "expires_at",
+        [
+            "not a date",
+            "2024-02-30T00:00:00Z",
+            "9999-12-31T23:59:59-05:00",
+            "2030-01-01T00:00:00+24:00",
+            12345,
+            ["2030-01-01T00:00:00Z"],
+            # Falsy, but not "no expiry".
+            0,
+            False,
+            [],
+            {},
+        ],
+    )
+    def test_invalid_expires_at_rejected(self, api_client, mailbox, expires_at):
+        """An ``expires_at`` the authentication cannot read is refused."""
+        url = reverse("mailbox-channels-list", kwargs={"mailbox_id": mailbox.id})
+        response = api_client.post(
+            url,
+            data={
+                "name": "Bad expires_at",
+                "type": "api_key",
+                "settings": {"scopes": ["messages:send"], "expires_at": expires_at},
+            },
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert not models.Channel.objects.filter(name="Bad expires_at").exists()
 
 
 @pytest.mark.django_db

@@ -1,6 +1,7 @@
 """Handles outbound email delivery logic: composing and sending messages."""
 # pylint: disable=broad-exception-caught, too-many-lines
 
+import datetime
 import json
 import logging
 from typing import Any, Optional
@@ -18,6 +19,7 @@ from jmap_email import (
     find_header,
     first_address_email,
     parse_email,
+    sent_at_to_datetime,
 )
 
 from core import models
@@ -46,18 +48,18 @@ from core.utils import ThreadStatsUpdateDeferrer
 logger = logging.getLogger(__name__)
 
 RETRY_INTERVALS = [
-    timezone.timedelta(minutes=15),
-    timezone.timedelta(minutes=30),
-    timezone.timedelta(minutes=45),
-    timezone.timedelta(minutes=60),
-    timezone.timedelta(hours=2),
-    timezone.timedelta(hours=4),
-    timezone.timedelta(hours=8),
-    timezone.timedelta(hours=12),
-    timezone.timedelta(hours=18),
-    timezone.timedelta(hours=24),
-    timezone.timedelta(hours=36),
-    timezone.timedelta(hours=48),
+    datetime.timedelta(minutes=15),
+    datetime.timedelta(minutes=30),
+    datetime.timedelta(minutes=45),
+    datetime.timedelta(minutes=60),
+    datetime.timedelta(hours=2),
+    datetime.timedelta(hours=4),
+    datetime.timedelta(hours=8),
+    datetime.timedelta(hours=12),
+    datetime.timedelta(hours=18),
+    datetime.timedelta(hours=24),
+    datetime.timedelta(hours=36),
+    datetime.timedelta(hours=48),
 ]
 
 
@@ -136,6 +138,18 @@ def build_xmailer_value() -> str:
     return settings.MDA_HEADER_XMAILER
 
 
+def _quote_sent_at(claimed, stored: datetime.datetime) -> datetime.datetime:
+    """The date to show in the quote header of a reply to a message.
+
+    The sender's own ``Date:`` when it is the instant we stored, which keeps
+    their offset as mail clients show it. Otherwise the stored ``sent_at``,
+    which is in range and not after delivery: a forged future or unreadable
+    ``Date:`` is not quoted.
+    """
+    parsed = sent_at_to_datetime(claimed)
+    return parsed if parsed is not None and parsed == stored else stored
+
+
 def compose_and_sign_mime(
     message: models.Message,
     mailbox: models.Mailbox,
@@ -171,6 +185,13 @@ def compose_and_sign_mime(
     # 2. Embed reply/forward quote
     if message.parent:
         parent_parsed = message.parent.get_parsed_data()
+        if parent_parsed and message.parent.sent_at:
+            parent_parsed = {
+                **parent_parsed,
+                "sentAt": _quote_sent_at(
+                    parent_parsed.get("sentAt"), message.parent.sent_at
+                ),
+            }
         if parent_parsed:
             if is_forward_subject(message.subject):
                 nested_data = make_forward(
@@ -616,8 +637,11 @@ def send_message(message: models.Message, force_mta_out: bool = False):
             if first_address_email(parsed_email.get("from")) != message.sender.email:
                 raise ValueError("Mailbox email does not match the raw message sender")
 
-            message.sent_at = timezone.now()
-            message.save(update_fields=["sent_at"])
+            # The first attempt only: a retry must not move the date shown
+            # as sent, nor restart the manual retry age limit.
+            if message.sent_at is None:
+                message.sent_at = timezone.now()
+                message.save(update_fields=["sent_at"])
 
             # Include all recipients in the envelope that have not been delivered yet, including BCC
             envelope_to = {

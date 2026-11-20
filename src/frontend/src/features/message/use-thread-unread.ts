@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useParams } from "@tanstack/react-router";
 
 import { Thread } from "@/features/api/gen/models";
+import { DateHelper } from "@/features/utils/date-helper";
 
 /**
  * Whether a thread is unread *for the mailbox being viewed*.
@@ -20,7 +21,7 @@ export const useThreadUnread = (thread: Thread): boolean => {
         const compareDate = thread.messaged_at;
         if (!access || !compareDate) return false;
         if (!access.read_at) return true;
-        return new Date(compareDate) > new Date(access.read_at);
+        return DateHelper.compareInstants(compareDate, access.read_at) > 0;
     }, [thread, mailboxId]);
 };
 

@@ -1,3 +1,4 @@
+import { DateHelper } from "@/features/utils/date-helper";
 import { useMailboxContext } from "../providers/mailbox";
 import useFlag from "./use-flag";
 
@@ -14,7 +15,7 @@ type MarkAsReadAtOptions = {
  */
 const deriveMessageIsUnread = (createdAt: string, readAt: string | null): boolean => {
     if (readAt === null) return true;
-    return new Date(createdAt) > new Date(readAt);
+    return DateHelper.compareInstants(createdAt, readAt) > 0;
 };
 
 /**
@@ -26,7 +27,36 @@ const deriveMessageIsUnread = (createdAt: string, readAt: string | null): boolea
 const deriveThreadHasUnread = (messagedAt: string | null | undefined, readAt: string | null): boolean => {
     if (!messagedAt) return false;
     if (readAt === null) return true;
-    return new Date(messagedAt) > new Date(readAt);
+    return DateHelper.compareInstants(messagedAt, readAt) > 0;
+};
+
+/**
+ * The read pointer for "mark as read now": the later of this device's clock
+ * and the newest message of the threads. A clock running behind the server's
+ * would otherwise leave the latest mail unread; one running ahead is clamped
+ * by the server.
+ */
+export const readAtNow = (messagedAts: readonly (string | null | undefined)[]): string => {
+    const now = Date.now();
+    let latest: string | undefined;
+    for (const value of messagedAts) {
+        if (!value || Number.isNaN(new Date(value).getTime())) continue;
+        if (!latest || DateHelper.compareInstants(value, latest) > 0) latest = value;
+    }
+    // The server's string, not a Date: it has microseconds, which a Date
+    // would truncate to a pointer just before the message. A message in the
+    // device's current millisecond is at or after it.
+    return latest && new Date(latest).getTime() >= now ? latest : new Date(now).toISOString();
+};
+
+/**
+ * The read pointer that leaves a message created at ``createdAt``, and all
+ * later ones, unread: 1 ms before it. Null (all unread) for a message of the
+ * first millisecond of year 1, which nothing can precede on the server.
+ */
+export const readAtBefore = (createdAt: string): string | null => {
+    const before = new Date(new Date(createdAt).getTime() - 1);
+    return before.getUTCFullYear() < 1 ? null : before.toISOString();
 };
 
 /**

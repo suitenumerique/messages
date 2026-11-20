@@ -27,6 +27,8 @@ from jmap_email import (
     is_valid_msg_id,
     parse_address,
     parse_addresses,
+    parse_date,
+    sent_at_to_datetime,
 )
 from jmap_email.types import EmailAddress
 
@@ -1082,6 +1084,28 @@ def _synthesize_message_id(message, recipient_email: str | None) -> str:
     return f"pst-synth-{digest}@{domain}"
 
 
+def _archive_date(value: datetime | None) -> datetime | None:
+    """``value`` if usable as the Date of an archived message, else None.
+
+    None when out of range once in UTC, in the future, or before year 100
+    (the composer refuses those, which would drop the message): the MAPI
+    timestamps are better than the import time the inbound step would use.
+    An offset with seconds (``+05:30:15``, ISO only) has no RFC 5322 form:
+    such a date is returned in UTC.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    try:
+        utc = value.astimezone(timezone.utc)
+    except (OverflowError, ValueError):
+        return None
+    if utc > datetime.now(timezone.utc) or utc.year < 100 or value.year < 100:
+        return None
+    return value if value.utcoffset().total_seconds() % 60 == 0 else utc
+
+
 def reconstruct_eml(
     message,
     store_email: str | None = None,
@@ -1157,10 +1181,11 @@ def reconstruct_eml(
         if subject:
             jmap_data["subject"] = subject
 
-        # sentAt
-        date_str = parsed_headers.get("Date")
-        if date_str:
-            jmap_data["sentAt"] = date_str
+        # sentAt: RFC 5322, or ISO 8601 as some exporters write it.
+        date_str = str(parsed_headers.get("Date") or "")
+        sent_at = _archive_date(parse_date(date_str) or sent_at_to_datetime(date_str))
+        if sent_at is not None:
+            jmap_data["sentAt"] = sent_at.isoformat()
 
         # Message-ID — header is preferred, but Exchange/O365 exports
         # sometimes strip it or carry a malformed value (empty, missing
@@ -1218,9 +1243,24 @@ def reconstruct_eml(
     # Take the record's own timestamps, and only when it has none log a
     # warning and use the Unix epoch rather than fail the whole message.
     if "sentAt" not in jmap_data:
-        timestamp = _get_message_timestamp(
-            message, _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+        # The first timestamp that passes the same checks as a Date: a
+        # crafted PST can carry a future or out-of-range one.
+        timestamp = next(
+            (
+                usable
+                for attr in _SENT_TIME_ATTRS + _RECORD_TIME_ATTRS
+                if (usable := _archive_date(_get_message_timestamp(message, (attr,))))
+                is not None
+            ),
+            None,
         )
+        if timestamp is None and transport_headers:
+            # Then the date the recipient's server stamped (topmost hop), as
+            # the inbound step would: an epoch Date would hide it from there.
+            received = parsed_headers.get_all("Received") or []
+            if received and ";" in str(received[0]):
+                stamped = " ".join(str(received[0]).rsplit(";", 1)[1].split())
+                timestamp = _archive_date(parse_date(stamped))
         if timestamp is not None:
             jmap_data["sentAt"] = timestamp.isoformat()
         else:

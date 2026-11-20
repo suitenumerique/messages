@@ -23,6 +23,7 @@ from core.checks import (
     _ZSTD_MIN_LEVEL,
     check_blob_compression_config,
     check_blob_encryption_config,
+    check_duration_settings,
 )
 from core.utils import JSONValue
 
@@ -229,3 +230,36 @@ def test_jsonvalue_malformed_does_not_leak_secret():
     )
     assert secret_marker not in tb
     assert exc_info.value.__suppress_context__ is True
+
+
+# --------------------------------------------------------------------
+# check_duration_settings
+# --------------------------------------------------------------------
+
+
+def test_check_durations_default_passes():
+    """The default configuration has no duration error."""
+    assert "core.E006" not in _ids(check_duration_settings(None))
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        {"TRASHBIN_CUTOFF_DAYS": 999999},
+        {"PUSH_PREVIEW_MAX_IDLE_DAYS": 36501},
+        {"MESSAGES_BLOBS_OFFLOAD_DELAY": 36500 * 86400 + 1},
+        {"MESSAGES_MANUAL_RETRY_MAX_AGE": 10**12},
+    ],
+)
+def test_check_durations_too_large_yields_E006(setting):
+    """A duration too large to subtract from now is refused at boot."""
+    with override_settings(**setting):
+        issues = check_duration_settings(None)
+    assert _ids(issues) == {"core.E006"}
+    assert next(iter(setting)) in issues[0].msg
+
+
+@override_settings(TRASHBIN_CUTOFF_DAYS=36500)
+def test_check_durations_at_the_limit_passes():
+    """100 years is allowed."""
+    assert check_duration_settings(None) == []

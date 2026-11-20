@@ -183,3 +183,60 @@ def check_blob_lifecycle_redis(app_configs, **kwargs):
             id="core.W004",
         )
     ]
+
+
+# Durations subtracted from now (``now - timedelta(...)``): past about 2000
+# years (before year 1) that raises OverflowError, in every run of the task
+# using it. 100 years is beyond any meaningful value.
+_MAX_DURATION_DAYS = 36500
+_SECONDS_PER_DAY = 86400
+
+
+@register()
+def check_duration_settings(app_configs, **kwargs):
+    """Refuse duration settings too large to subtract from now.
+
+    A value meant as "never" (``TRASHBIN_CUTOFF_DAYS=999999``) would make the
+    task using it fail on every run instead.
+    """
+    durations = [
+        # (name, value, units per day)
+        (
+            "MESSAGES_MANUAL_RETRY_MAX_AGE",
+            settings.MESSAGES_MANUAL_RETRY_MAX_AGE,
+            _SECONDS_PER_DAY,
+        ),
+        (
+            "MESSAGES_INBOUND_DEFERRAL_MAX_AGE",
+            settings.MESSAGES_INBOUND_DEFERRAL_MAX_AGE,
+            _SECONDS_PER_DAY,
+        ),
+        (
+            "MESSAGES_IMPORT_STALL_TIMEOUT",
+            settings.MESSAGES_IMPORT_STALL_TIMEOUT,
+            _SECONDS_PER_DAY,
+        ),
+        (
+            "MESSAGES_IMPORT_IMAP_POLL_INTERVAL",
+            settings.MESSAGES_IMPORT_IMAP_POLL_INTERVAL,
+            _SECONDS_PER_DAY,
+        ),
+        (
+            "MESSAGES_BLOBS_OFFLOAD_DELAY",
+            settings.MESSAGES_BLOBS_OFFLOAD_DELAY,
+            _SECONDS_PER_DAY,
+        ),
+        ("TRASHBIN_CUTOFF_DAYS", settings.TRASHBIN_CUTOFF_DAYS, 1),
+        ("PUSH_PREVIEW_MAX_IDLE_DAYS", settings.PUSH_PREVIEW_MAX_IDLE_DAYS, 1),
+    ]
+    errors = []
+    for name, value, units_per_day in durations:
+        if value > _MAX_DURATION_DAYS * units_per_day:
+            errors.append(
+                Error(
+                    f"{name}={value} is more than {_MAX_DURATION_DAYS} days.",
+                    hint=f"Set {name} to at most {_MAX_DURATION_DAYS * units_per_day}.",
+                    id="core.E006",
+                )
+            )
+    return errors

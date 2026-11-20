@@ -2,7 +2,7 @@ import { DateHelper } from './date-helper';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 
 describe('DateHelper', () => {
-  // Mock current date to 2024-03-15
+  // Mock current date to 2025-04-17
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-04-17T16:00:00'));
@@ -13,6 +13,14 @@ describe('DateHelper', () => {
   });
 
   describe('formatDate', () => {
+    it.each(['', 'garbage', undefined as unknown as string])(
+      'returns an empty string for an invalid date (%s) instead of throwing',
+      (value) => {
+        expect(DateHelper.formatDate(value, 'en')).toBe('');
+        expect(DateHelper.formatEventTimestamp(value, 'en')).toBe('');
+      },
+    );
+
     it('should format time when date is today', () => {
       const todayDate = '2025-04-17T17:30:00';
       expect(DateHelper.formatDate(todayDate, 'fr')).toBe('17:30');
@@ -54,15 +62,116 @@ describe('DateHelper', () => {
     });
   });
 
-  describe('formatDateTime', () => {
+  describe('formatWallClock', () => {
     it('formats the date and time according to the locale', () => {
-      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'en-US')).toBe('Oct 20, 2026, 6:00 PM');
-      expect(DateHelper.formatDateTime('2026-10-20T18:00', 'fr-FR')).toBe('20 oct. 2026, 18:00');
+      expect(DateHelper.formatWallClock('2026-10-20T18:00', 'en-US')).toBe('Oct 20, 2026, 6:00 PM');
+      expect(DateHelper.formatWallClock('2026-10-20T18:00:00', 'fr-FR')).toBe('20 oct. 2026, 18:00');
+    });
+
+    it("shows the time as written, even in a skipped hour of the browser's zone", () => {
+      const originalTz = process.env.TZ;
+      try {
+        // 2026-03-08 02:30 does not exist in New York: a local Date reads 03:30.
+        process.env.TZ = 'America/New_York';
+        expect(new Date('2026-03-08T02:30').getHours()).toBe(3);
+        expect(DateHelper.formatWallClock('2026-03-08T02:30', 'en-US')).toBe('Mar 8, 2026, 2:30 AM');
+      } finally {
+        if (originalTz === undefined) delete process.env.TZ;
+        else process.env.TZ = originalTz;
+      }
     });
 
     it('returns undefined for an invalid date', () => {
-      expect(DateHelper.formatDateTime('20261020T1800', 'en-US')).toBeUndefined();
+      expect(DateHelper.formatWallClock('20261020T1800', 'en-US')).toBeUndefined();
     });
+  });
+
+  describe('fromWallClock', () => {
+    // Python: datetime(..., tzinfo=ZoneInfo("Europe/Paris")).astimezone(UTC)
+    it.each([
+      ['2026-06-01T10:00', 'Europe/Paris', '2026-06-01T08:00:00.000Z'],
+      ['2026-06-01T10:00:30', 'UTC', '2026-06-01T10:00:30.000Z'],
+      // Repeated hour (fold=0): the first 02:30 (CEST).
+      ['2026-10-25T02:30', 'Europe/Paris', '2026-10-25T00:30:00.000Z'],
+      // Skipped hour (fold=0): offset from before the change (CET).
+      ['2026-03-29T02:30', 'Europe/Paris', '2026-03-29T01:30:00.000Z'],
+      ['2026-03-08T02:30', 'America/New_York', '2026-03-08T07:30:00.000Z'],
+    ])('reads %s in %s like the backend', (wall, tz, expected) => {
+      expect(new Date(DateHelper.fromWallClock(wall, tz)).toISOString()).toBe(expected);
+    });
+
+    it('is NaN for an invalid time or zone', () => {
+      expect(DateHelper.fromWallClock('garbage', 'UTC')).toBeNaN();
+      expect(DateHelper.fromWallClock('2026-06-01T10:00', 'Mars/Olympus')).toBeNaN();
+    });
+
+    it.each([
+      ['0026-06-01T10:00', '0026-06-01T10:00:00.000Z'],
+      ['0099-06-01T10:00', '0099-06-01T10:00:00.000Z'],
+      ['0500-06-01T10:00', '0500-06-01T10:00:00.000Z'],
+    ])('reads the year of %s as written', (wall, expected) => {
+      expect(new Date(DateHelper.fromWallClock(wall, 'UTC')).toISOString()).toBe(expected);
+    });
+  });
+
+  describe('isSameTimeZone', () => {
+    it('matches aliases of a zone', () => {
+      expect(DateHelper.isSameTimeZone('Asia/Kolkata', 'Asia/Calcutta')).toBe(true);
+      expect(DateHelper.isSameTimeZone('UTC', 'Etc/UTC')).toBe(true);
+      expect(DateHelper.isSameTimeZone('Europe/Paris', 'Europe/Berlin')).toBe(false);
+      expect(DateHelper.isSameTimeZone('Mars/Olympus', 'Mars/Olympus')).toBe(true);
+    });
+  });
+
+  describe('offsetInstant', () => {
+    it.each([
+      ['2026-06-01T10:00:00Z', '2026-06-01T10:00:00.000Z'],
+      ['2026-06-01T10:00:00+02:00', '2026-06-01T08:00:00.000Z'],
+      ['2026-06-01T10:00:00-0130', '2026-06-01T11:30:00.000Z'],
+      // Python writes sub-minute offsets with seconds; Date.parse refuses them.
+      ['2026-06-01T10:00:00+01:00:30', '2026-06-01T08:59:30.000Z'],
+      ['2026-06-01T10:00:00.250-00:00:30', '2026-06-01T10:00:30.250Z'],
+    ])('reads %s', (value, expected) => {
+      expect(DateHelper.hasOffset(value)).toBe(true);
+      expect(new Date(DateHelper.offsetInstant(value)).toISOString()).toBe(expected);
+    });
+
+    it.each(['2026-06-01T10:00', '2026-06-01T10:00:00', '2026-06-01'])('finds no offset in %s', (value) => {
+      expect(DateHelper.hasOffset(value)).toBe(false);
+      expect(DateHelper.offsetInstant(value)).toBeNaN();
+    });
+  });
+
+  describe('compareInstants', () => {
+    it('compares below the millisecond', () => {
+      expect(DateHelper.compareInstants('2026-06-01T10:00:00.123456Z', '2026-06-01T10:00:00.123455Z')).toBeGreaterThan(0);
+      expect(DateHelper.compareInstants('2026-06-01T10:00:00.123Z', '2026-06-01T10:00:00.123001Z')).toBeLessThan(0);
+      expect(DateHelper.compareInstants('2026-06-01T10:00:00.1235Z', '2026-06-01T10:00:00.1234Z')).toBeGreaterThan(0);
+    });
+
+    it('compares instants, not strings', () => {
+      expect(DateHelper.compareInstants('2026-06-01T10:00:00Z', '2026-06-01T10:00:00.000000Z')).toBe(0);
+      expect(DateHelper.compareInstants('2026-06-01T12:00:00+02:00', '2026-06-01T10:00:00Z')).toBe(0);
+      expect(DateHelper.compareInstants('2026-06-01T10:00:01Z', '2026-06-01T10:00:00.999999Z')).toBeGreaterThan(0);
+    });
+
+    it('is NaN for an unreadable value', () => {
+      expect(DateHelper.compareInstants('garbage', '2026-06-01T10:00:00Z')).toBeNaN();
+    });
+  });
+
+  describe('resolveTimeZone', () => {
+    it('keeps a known time zone', () => {
+      expect(DateHelper.resolveTimeZone('Europe/Paris')).toBe('Europe/Paris');
+      expect(DateHelper.resolveTimeZone('UTC')).toBe('UTC');
+    });
+
+    it.each([undefined, null, '', 0, false, ['Europe/Paris'], 'Mars/Olympus'])(
+      'falls back to UTC for %s, as the backend does',
+      (value) => {
+        expect(DateHelper.resolveTimeZone(value)).toBe('UTC');
+      },
+    );
   });
 
   describe('toWallClock', () => {
@@ -79,6 +188,19 @@ describe('DateHelper', () => {
     it('returns undefined for an invalid date or time zone', () => {
       expect(DateHelper.toWallClock('not a dateZ', 'UTC')).toBeUndefined();
       expect(DateHelper.toWallClock('2026-10-20T18:00:00Z', 'Mars/Olympus')).toBeUndefined();
+    });
+
+    it('writes years before 1000 with four digits', () => {
+      expect(DateHelper.toWallClock('0500-01-01T00:00:00+00:00', 'UTC')).toBe('0500-01-01T00:00:00');
+      expect(DateHelper.toWallClock('0001-01-01T12:00:00Z', 'UTC')).toBe('0001-01-01T12:00:00');
+    });
+
+    it('returns undefined before year 1, which the backend cannot represent', () => {
+      expect(DateHelper.toWallClock('0001-01-01T00:00:00+01:00', 'UTC')).toBeUndefined();
+    });
+
+    it('converts an offset with seconds', () => {
+      expect(DateHelper.toWallClock('2026-06-01T10:00:00+01:00:30', 'UTC')).toBe('2026-06-01T08:59:30');
     });
   });
 

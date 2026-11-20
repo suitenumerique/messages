@@ -267,7 +267,7 @@ class ThreadViewSet(
                 "messages",
                 queryset=models.Message.objects.only(
                     "id", "thread_id", "created_at", "is_draft", "is_trashed"
-                ).order_by("created_at"),
+                ).order_by("created_at", "id"),
                 to_attr="_ordered_messages",
             ),
             # Feeds ThreadSerializer.get_labels. Labels are scoped to the
@@ -838,8 +838,10 @@ class ThreadViewSet(
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get all messages in the thread ordered chronologically
-        all_messages = old_thread.messages.order_by("created_at")
+        # Get all messages in the thread ordered chronologically. ``id`` breaks
+        # ties (imports copy ``Date:``, to the second), as in
+        # ``Thread.update_stats``, so the cut below matches this order.
+        all_messages = old_thread.messages.order_by("created_at", "id")
         total_count = all_messages.count()
 
         if total_count <= 1:
@@ -856,7 +858,10 @@ class ThreadViewSet(
             )
 
         # Determine messages to move (split_message and all later)
-        messages_to_move = all_messages.filter(created_at__gte=split_message.created_at)
+        messages_to_move = all_messages.filter(
+            Q(created_at__gt=split_message.created_at)
+            | Q(created_at=split_message.created_at, id__gte=split_message.id)
+        )
 
         with transaction.atomic():
             new_subject = split_message.subject or old_thread.subject
@@ -888,9 +893,12 @@ class ThreadViewSet(
             # Move messages
             messages_to_move.update(thread=new_thread)
 
-            # Fix cross-thread parent references
+            # Fix cross-thread parent references, both ways: with dates that
+            # tie (imports) or out of order, a kept message can have its parent
+            # among the moved ones.
             models.Message.objects.filter(
-                thread=new_thread, parent__thread=old_thread
+                Q(thread=new_thread, parent__thread=old_thread)
+                | Q(thread=old_thread, parent__thread=new_thread)
             ).update(parent=None)
 
             # Move ThreadEvents that belong chronologically to the new thread.

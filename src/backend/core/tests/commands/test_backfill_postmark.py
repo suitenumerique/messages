@@ -3,7 +3,7 @@
 from io import StringIO
 from unittest.mock import patch
 
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 
 import pytest
 
@@ -30,6 +30,27 @@ class TestBackfillPostmark:
 
         message.refresh_from_db()
         assert message.postmark == {"auth": "fail", "processing": "fail"}
+
+    @pytest.mark.filterwarnings("error::RuntimeWarning")
+    @pytest.mark.parametrize(
+        ("before", "scanned"), [("2000-01-01", False), ("2100-01-01", True)]
+    )
+    def test_before_bare_date_is_midnight_utc(self, before, scanned):
+        """A bare date is a UTC cutoff, with no naive-datetime warning."""
+        message = factories.MessageFactory(raw_mime=_CLEAN)
+
+        call_command("backfill_postmark", "--before", before, stdout=StringIO())
+
+        message.refresh_from_db()
+        assert (message.postmark is not None) is scanned
+
+    @pytest.mark.parametrize(
+        "before", ["not-a-date", "2026-02-30", "9999-12-31T23:59:59-05:00"]
+    )
+    def test_before_invalid_value_raises(self, before):
+        """An unusable --before aborts with an explicit error."""
+        with pytest.raises(CommandError, match="not a valid ISO date/datetime"):
+            call_command("backfill_postmark", "--before", before, stdout=StringIO())
 
     def test_clean_message_marked_scanned_as_empty(self):
         """A legacy message with no X-StMsg headers is set to ``{}`` so it is

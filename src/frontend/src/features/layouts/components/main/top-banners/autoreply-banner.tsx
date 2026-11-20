@@ -11,9 +11,8 @@ import { useBannerDismissal } from "./use-banner-dismissal";
 
 /**
  * Warns the user that an auto-reply is active for the selected mailbox.
- * Whether it is active is computed by the backend at fetch time, so a
- * scheduled auto-reply starting or ending is only reflected on page load.
- * Closing it hides it for the selected mailbox only.
+ * Whether it is active is computed by the backend at fetch time, refetched
+ * every 5 minutes. Closing it hides it for the selected mailbox only.
  */
 export const AutoreplyBanner = () => {
   const { selectedMailbox } = useMailboxContext();
@@ -30,6 +29,9 @@ export const AutoreplyBanner = () => {
       query: {
         enabled: !!selectedMailbox?.id,
         staleTime: Infinity,
+        // ``is_active_autoreply`` is computed when fetched: refetch so the
+        // banner follows a schedule that starts or ends while the app is open.
+        refetchInterval: 5 * 60 * 1000,
       },
     },
   );
@@ -42,12 +44,12 @@ export const AutoreplyBanner = () => {
   const metadata = activeAutoreply.metadata;
   // end_at is shown as a wall-clock time in the auto-reply time zone, which
   // the backend defaults to UTC: name that zone when it is not the user's one.
-  const timeZone = typeof metadata?.timezone === "string" ? metadata.timezone : "UTC";
+  const timeZone = DateHelper.resolveTimeZone(metadata?.timezone);
   const endAtWallClock = metadata?.schedule_type === "date_range" && typeof metadata.end_at === "string"
     ? DateHelper.toWallClock(metadata.end_at, timeZone)
     : undefined;
-  const endAt = endAtWallClock && DateHelper.formatDateTime(endAtWallClock, i18n.language);
-  const isForeignTimeZone = timeZone !== Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const endAt = endAtWallClock && DateHelper.formatWallClock(endAtWallClock, i18n.language);
+  const isForeignTimeZone = !DateHelper.isSameTimeZone(timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone);
   const label = endAt
     ? t("An auto-reply is active for this mailbox until {{date}}.", {
         date: isForeignTimeZone ? `${endAt} (${timeZone})` : endAt,

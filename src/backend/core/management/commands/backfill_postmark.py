@@ -18,14 +18,13 @@ Usage:
     python manage.py backfill_postmark --before 2026-07-01 --dry-run
 """
 
-import datetime
 import logging
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
-from django.utils.dateparse import parse_datetime
 
 from core import models
+from core.utils import parse_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -82,18 +81,13 @@ class Command(BaseCommand):
 
         base_qs = models.Message.objects.filter(postmark__isnull=True)
         if options["before"]:
-            # ISO date or datetime string → aware datetime.
-            cutoff = parse_datetime(options["before"])
+            # ISO date or datetime string → aware datetime; a bare date or no
+            # offset is read as UTC.
+            cutoff = parse_utc_datetime(options["before"])
             if cutoff is None:
-                try:
-                    # Bare date → midnight UTC.
-                    cutoff = datetime.datetime.fromisoformat(options["before"]).replace(
-                        tzinfo=datetime.UTC
-                    )
-                except ValueError as exc:
-                    raise CommandError(
-                        f"--before {options['before']} is not a valid ISO date/datetime"
-                    ) from exc
+                raise CommandError(
+                    f"--before {options['before']} is not a valid ISO date/datetime"
+                )
             base_qs = base_qs.filter(created_at__lt=cutoff)
 
         scanned = 0

@@ -6,7 +6,7 @@ import useAbility, { Abilities } from "@/hooks/use-ability";
 import useArchive from "./use-archive";
 import useDeleteDrafts from "./use-delete-drafts";
 import useEmptyTrash from "./use-empty-trash";
-import useRead from "./use-read";
+import useRead, { readAtNow } from "./use-read";
 import useTrash from "./use-trash";
 
 export type ThreadRowActions = {
@@ -71,7 +71,7 @@ export const useThreadRowActions = (): ThreadRowActions => {
     const toggleRead = useCallback((thread: Thread, isUnread: boolean) => {
         mutations.current.markAsReadAt({
             threadIds: [thread.id],
-            readAt: isUnread ? new Date().toISOString() : null,
+            readAt: isUnread ? readAtNow([thread.messaged_at]) : null,
         });
     }, []);
 

@@ -9,7 +9,7 @@ library's dependency surface.
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
@@ -20,7 +20,10 @@ from defusedxml.ElementTree import ParseError as DefusedParseError
 from icalendar import Calendar as ICalendar
 
 from core.mda.addresses import ascii_lower, normalize_address
-from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.ics_rebuild import (
+    UnstorableCalendarError,
+    rebuild_for_storage,
+)
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -74,6 +77,26 @@ def _format_utc(dt):
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+_UNUSABLE = object()
+
+
+def _event_date(component, name):
+    """The date or datetime of ``component``'s ``name`` property.
+
+    None when absent. ``_UNUSABLE`` when it cannot be read: repeated (a list),
+    unparseable (icalendar raises on access), or not a single date or
+    datetime (``VALUE=PERIOD``).
+    """
+    prop = component.get(name)
+    if prop is None:
+        return None
+    try:
+        value = prop.dt
+    except Exception:  # pylint: disable=broad-exception-caught
+        return _UNUSABLE
+    return value if isinstance(value, date) else _UNUSABLE
+
+
 class CalDAVError(Exception):
     """CalDAV protocol or server error.
 
@@ -85,6 +108,14 @@ class CalDAVError(Exception):
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
+
+
+def _rebuild(cal):
+    """``rebuild_for_storage``, with a refusal as a CalDAVError."""
+    try:
+        return rebuild_for_storage(cal)
+    except UnstorableCalendarError as exc:
+        raise CalDAVError("This event cannot be stored: its data is invalid.") from exc
 
 
 class CalDAVService:  # pylint: disable=too-many-instance-attributes
@@ -539,8 +570,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             logger.warning("Could not parse conflicting event", exc_info=True)
             return None
         for comp in cal.walk("VEVENT"):
-            dtstart = comp.get("DTSTART")
-            dtend = comp.get("DTEND")
+            start = _event_date(comp, "DTSTART")
+            end = _event_date(comp, "DTEND")
+            if _UNUSABLE in (start, end):
+                # Unreadable, repeated or of the wrong type: one such event
+                # in a calendar must not fail every conflict check.
+                logger.warning("Skipping conflicting event with an unusable date")
+                continue
             uid = comp.get("UID")
             # All-day events carry a ``date`` (not ``datetime``) — surface
             # the distinction so the UI can format without TZ conversion.
@@ -548,17 +584,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             # converts to local time; for users west of UTC the date can
             # display as the day *before*. The ``all_day`` flag lets the
             # client opt into a date-only formatter for those.
-            all_day = bool(
-                dtstart
-                and hasattr(dtstart, "dt")
-                and not isinstance(dtstart.dt, datetime)
-            )
             return {
                 "uid": str(uid) if uid else None,
                 "summary": str(comp.get("SUMMARY") or "Untitled event"),
-                "start": dtstart.dt.isoformat() if dtstart else None,
-                "end": dtend.dt.isoformat() if dtend else None,
-                "all_day": all_day,
+                "start": start.isoformat() if start else None,
+                "end": end.isoformat() if end else None,
+                "all_day": bool(start) and not isinstance(start, datetime),
                 "calendar_name": calendar_name,
             }
         return None
@@ -566,7 +597,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     def add_event(self, ics_data, calendar_id=None):
         """Store an event on the selected calendar (or the default one)."""
         cal = ICalendar.from_ical(ics_data)
-        cal = rebuild_for_storage(cal)
+        cal = _rebuild(cal)
         # Suppress server-side iTIP REQUEST fan-out. sabre/dav's Schedule
         # plugin (used by suitenumerique/calendars) auto-dispatches one
         # iTIP REQUEST per ATTENDEE on any PUT where the calendar owner is
@@ -635,7 +666,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 "RSVP would not notify the organizer."
             )
 
-        cal = rebuild_for_storage(cal)
+        cal = _rebuild(cal)
 
         self._put_event(
             calendar["id"],

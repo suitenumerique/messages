@@ -10,7 +10,8 @@ properties before PUTing to the CalDAV server.
 
 import copy
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from datetime import time as dt_time
 
 from icalendar import Calendar as ICalendar
 from icalendar import Event as ICalEvent
@@ -104,13 +105,29 @@ _SAFE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 # RRULE frequencies that produce ruinous expansion if unbounded.
 # Thunderbird hard-froze on a SECONDLY-frequency invite without
-# COUNT/UNTIL (Mozilla bug 1770984). Reject these unless explicitly
-# bounded.
+# COUNT/UNTIL (Mozilla bug 1770984). Reject these unless bounded by a
+# small COUNT.
 _RRULE_FREQ_REQUIRES_BOUND = frozenset({"SECONDLY", "MINUTELY"})
+_SUBHOURLY_MAX_COUNT = 1000
+
+# Date properties RFC 5545 allows once per VEVENT.
+_SINGLE_DATES = frozenset(
+    {"DTSTAMP", "CREATED", "LAST-MODIFIED", "DTSTART", "DTEND", "RECURRENCE-ID"}
+)
+# Date properties that define which occurrences exist.
+_RECURRENCE_DATES = frozenset({"RECURRENCE-ID", "RDATE", "EXDATE"})
+
+
+class UnstorableCalendarError(ValueError):
+    """The calendar has an event that cannot be stored faithfully."""
 
 
 def rebuild_for_storage(cal):
     """Return a fresh VCALENDAR containing only allowlisted properties.
+
+    Raises ``UnstorableCalendarError`` when there is no event, or when an
+    event has to be dropped: the events of a calendar are the master and
+    exceptions of one series, which is stored whole or not at all.
 
     Default-deny posture: inbound .ics is attacker-controlled (it
     arrives as an email attachment), so rather than try to enumerate
@@ -150,7 +167,7 @@ def rebuild_for_storage(cal):
     for vevent in cal.walk("VEVENT"):
         clean = _rebuild_event(vevent)
         if clean is None:
-            continue
+            raise UnstorableCalendarError("An event has no UID or unreadable dates.")
         for prop in ("DTSTART", "DTEND", "RECURRENCE-ID", "RDATE", "EXDATE"):
             val = clean.get(prop)
             if val is None:
@@ -160,6 +177,8 @@ def rebuild_for_storage(cal):
                 if tzid:
                     referenced_tzids.add(str(tzid))
         rebuilt_events.append(clean)
+    if not rebuilt_events:
+        raise UnstorableCalendarError("The calendar has no event.")
 
     # Pass 2: preserve only the VTIMEZONEs our kept events use.
     for vtz in cal.walk("VTIMEZONE"):
@@ -176,8 +195,8 @@ def _rebuild_event(src):
     """Build a fresh VEVENT containing only allowlisted properties.
 
     Returns ``None`` if the source has no UID (malformed event per
-    RFC 5545 — skip rather than store). A missing DTSTAMP is
-    synthesized (see fallback chain below).
+    RFC 5545), no readable DTSTART, or a recurrence date that cannot be
+    read. A missing DTSTAMP is synthesized (see fallback chain below).
 
     DTSTAMP caveat: iTIP sequencing (RFC 5546 §3.2.6) compares
     SEQUENCE first, then DTSTAMP, to decide whether an inbound
@@ -195,14 +214,19 @@ def _rebuild_event(src):
     inversion on follow-up updates.
     """
     fresh = ICalEvent()
+    recurrence_dropped = False
     for key in list(src.keys()):
         upper = key.upper()
         if upper not in _VEVENT_KEEP:
             continue
         value = src[key]
         for item in value if isinstance(value, list) else [value]:
+            if upper in _SINGLE_DATES and upper in fresh:
+                # RFC 5545 allows one: a second would make readers fail.
+                continue
             cleaned = _clean_property_value(upper, item)
             if cleaned is None:
+                recurrence_dropped |= upper in _RECURRENCE_DATES
                 continue
             _filter_params(upper, cleaned)
             # ``encode=0``: the value is already a typed icalendar
@@ -210,20 +234,68 @@ def _rebuild_event(src):
             # don't want add() to re-encode and lose the params.
             fresh.add(key, cleaned, encode=0)
 
-    if "UID" not in fresh:
+    # Without a readable DTSTART the event cannot be shown or scheduled. A
+    # recurrence date that cannot be read is not dropped alone: without its
+    # RECURRENCE-ID an exception would become a second master of the
+    # series, and without an RDATE or EXDATE the series would miss an
+    # occurrence or show a cancelled one.
+    if "UID" not in fresh or "DTSTART" not in fresh or recurrence_dropped:
         return None
+    rules = fresh.get("RRULE")
+    if rules is not None:
+        rules = rules if isinstance(rules, list) else [rules]
+        kept = [r for r in rules if _subhourly_until_is_small(r, fresh["DTSTART"].dt)]
+        if len(kept) != len(rules):
+            del fresh["RRULE"]
+            for rule in kept:
+                fresh.add("RRULE", rule, encode=0)
+    stamp = fresh.get("DTSTAMP")
+    if stamp is not None and not isinstance(stamp.dt, datetime):
+        # RFC 5545 §3.8.7.2: a DTSTAMP is a UTC date-time.
+        del fresh["DTSTAMP"]
     if "DTSTAMP" not in fresh:
         # Prefer iTIP versioning info already present on the event
         # (LAST-MODIFIED → CREATED) over server-now. Setting DTSTAMP
         # to "now" effectively claims this event was authored this
         # second, which breaks iTIP sequencing if the organizer ever
         # sends an update; the original timestamps preserve order.
-        fallback = fresh.get("LAST-MODIFIED") or fresh.get("CREATED")
-        if fallback is not None and hasattr(fallback, "dt"):
-            fresh.add("DTSTAMP", fallback.dt)
-        else:
-            fresh.add("DTSTAMP", datetime.now(tz=timezone.utc))
+        fresh.add(
+            "DTSTAMP",
+            _utc_stamp(fresh.get("LAST-MODIFIED"))
+            or _utc_stamp(fresh.get("CREATED"))
+            or datetime.now(tz=timezone.utc),
+        )
     return fresh
+
+
+def _utc_stamp(prop):
+    """``prop``'s date-time in UTC, or None if absent or only a date."""
+    value = getattr(prop, "dt", None)
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    try:
+        return value.astimezone(timezone.utc)
+    except (OverflowError, ValueError):
+        return None
+
+
+def _readable_dates(prop, value):
+    """Whether every date of ``value`` can be read.
+
+    icalendar raises on access for an unparseable value (``garbage``, year
+    0). A single date property must hold one date or date-time; RDATE and
+    EXDATE hold a list, where RDATE may also hold periods.
+    """
+    try:
+        if prop in _SINGLE_DATES:
+            return isinstance(value.dt, date)
+        return all(
+            isinstance(item.dt, (date, tuple)) for item in getattr(value, "dts", [])
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
 
 
 def _clean_property_value(prop, value):
@@ -231,17 +303,60 @@ def _clean_property_value(prop, value):
     if prop == "URL":
         if not _SAFE_URL_RE.match(str(value)):
             return None
+    elif prop in _SINGLE_DATES or prop in ("RDATE", "EXDATE"):
+        if not _readable_dates(prop, value):
+            return None
     elif prop == "RRULE":
         # icalendar represents RRULE as a vRecur (dict-like) where
-        # each entry is a list (``{"FREQ": ["SECONDLY"]}``).
+        # each entry is a list (``{"FREQ": ["SECONDLY"]}``). A broken
+        # rule raises on access.
         try:
             freq = (value.get("FREQ") or [""])[0]
-        except (AttributeError, TypeError):
+            count = (value.get("COUNT") or [None])[0]
+        except Exception:  # pylint: disable=broad-exception-caught
             return None
         if str(freq).upper() in _RRULE_FREQ_REQUIRES_BOUND:
-            if not (value.get("COUNT") or value.get("UNTIL")):
+            # A small COUNT keeps the expansion small. An UNTIL alone (it can
+            # be year 9999) is checked against DTSTART in ``_rebuild_event``.
+            if count is None and value.get("UNTIL"):
+                return value
+            if not isinstance(count, int) or not 0 < count <= _SUBHOURLY_MAX_COUNT:
                 return None
     return value
+
+
+def _subhourly_until_is_small(rule, dtstart):
+    """Whether a sub-hourly ``rule`` bounded by UNTIL alone has at most
+    ``_SUBHOURLY_MAX_COUNT`` occurrences from ``dtstart``. True for any other
+    rule (already checked by ``_clean_property_value``).
+
+    Counted, not expanded: expanding a rule whose BY* parts rarely match
+    walks every second or minute until UNTIL.
+    """
+    try:
+        freq = str((rule.get("FREQ") or [""])[0]).upper()
+        if freq not in _RRULE_FREQ_REQUIRES_BOUND or rule.get("COUNT"):
+            return True
+        interval = (rule.get("INTERVAL") or [1])[0]
+        until = rule["UNTIL"][0]
+        if not isinstance(interval, int) or interval < 1:
+            return False
+        start = (
+            dtstart
+            if isinstance(dtstart, datetime)
+            else datetime.combine(dtstart, dt_time.min)
+        )
+        if not isinstance(until, datetime):
+            until = datetime.combine(until, dt_time.max)
+        span = (until - start).total_seconds()
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Unreadable, or a naive UNTIL with an aware DTSTART (or the reverse).
+        return False
+    step = interval * (60 if freq == "MINUTELY" else 1)
+    steps = max(span, 0) // step + 1
+    # MINUTELY expands BYSECOND (RFC 5545 §3.3.10); the other BY* only limit.
+    per_step = len(rule.get("BYSECOND") or [0]) if freq == "MINUTELY" else 1
+    return steps * per_step <= _SUBHOURLY_MAX_COUNT
 
 
 def _filter_params(prop, value):

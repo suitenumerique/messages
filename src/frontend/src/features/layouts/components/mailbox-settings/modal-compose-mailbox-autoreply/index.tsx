@@ -17,9 +17,17 @@ import { Banner } from "@/features/ui/components/banner";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import i18n from "@/features/i18n/initI18n";
 import { handle } from "@/features/utils/errors";
+import { DateHelper } from "@/features/utils/date-helper";
 import { useConfirmBeforeClose } from "@/features/hooks/use-confirm-before-close";
 import { extractSignatureId } from "../utils";
 import { TemplateComposer } from "../modal-compose-template/template-composer";
+import {
+    AutoreplyScheduleOrigin,
+    buildAutoreplyMetadata,
+    intervalFormValues,
+    startsBeforeEnd,
+    timeZoneOptions,
+} from "./autoreply-schedule";
 
 type ModalComposeMailboxAutoreplyProps = {
     isOpen: boolean;
@@ -160,12 +168,9 @@ const WEEKDAY_OPTIONS = [
     { label: i18n.t("Sunday"), value: "7" },
 ];
 
-const TIMEZONE_OPTIONS = Intl.supportedValuesOf("timeZone").map((tz) => ({
-    label: tz.replace(/_/g, " "),
-    value: tz,
-}));
+const TIMEZONES = Intl.supportedValuesOf("timeZone");
 
-const autoreplyComposerSchema = () => z.object({
+const autoreplyComposerSchema = (origin?: AutoreplyScheduleOrigin) => z.object({
     name: z.string().min(1, { error: i18n.t("Name is required") }),
     is_active: z.boolean(),
     rawBody: z.string().min(1, { error: i18n.t("Content is required") }),
@@ -185,7 +190,12 @@ const autoreplyComposerSchema = () => z.object({
         if (!data.end_at) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("End date is required"), path: ["end_at"] });
         }
-        if (data.start_at && data.end_at && data.start_at >= data.end_at) {
+        // The bounds that will be saved, as instants, as the backend compares them.
+        if (
+            data.start_at
+            && data.end_at
+            && !startsBeforeEnd(data, DateHelper.resolveTimeZone(data.timezone), origin)
+        ) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, message: i18n.t("Start date must be before end date"), path: ["start_at"] });
         }
     }
@@ -214,21 +224,34 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
 
     const intervals = metadata?.intervals as Array<Record<string, unknown>> | undefined;
     const interval0 = intervals?.[0];
+    // A stored template without a zone runs in UTC on the backend: showing
+    // it in the browser's zone would shift it on the next save.
+    const timeZone = defaultValue
+        ? DateHelper.resolveTimeZone(metadata?.timezone)
+        : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // The datetime-local inputs take a wall-clock time: one with an offset
+    // is shown in the template's zone.
+    const toInput = (value: unknown) =>
+        typeof value === "string" ? DateHelper.toWallClock(value, timeZone) ?? "" : "";
+    const timeZoneSelectOptions = timeZoneOptions(TIMEZONES, timeZone);
+    const origin: AutoreplyScheduleOrigin = {
+        metadata,
+        timeZone,
+        startInput: toInput(metadata?.start_at),
+        endInput: toInput(metadata?.end_at),
+    };
 
     const form = useForm<AutoreplyComposerFormData>({
-        resolver: zodResolver(autoreplyComposerSchema()),
+        resolver: zodResolver(autoreplyComposerSchema(defaultValue ? origin : undefined)),
         defaultValues: {
             name: defaultValue?.name ?? "",
             is_active: defaultValue?.is_active ?? true,
             rawBody: defaultValue?.raw_body ?? undefined,
             schedule_type: (metadata?.schedule_type as "always" | "date_range" | "recurring_weekly") ?? "always",
-            start_at: (metadata?.start_at as string) ?? "",
-            end_at: (metadata?.end_at as string) ?? "",
-            interval_start_day: interval0?.start_day != null ? String(interval0.start_day) : "",
-            interval_start_time: (interval0?.start_time as string) ?? "",
-            interval_end_day: interval0?.end_day != null ? String(interval0.end_day) : "",
-            interval_end_time: (interval0?.end_time as string) ?? "",
-            timezone: (metadata?.timezone as string) ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+            start_at: origin.startInput,
+            end_at: origin.endInput,
+            ...intervalFormValues(interval0),
+            timezone: timeZone,
         }
     });
     const { mutateAsync: createAutoreply, isPending } = useMailboxesMessageTemplatesCreate();
@@ -240,29 +263,6 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
     useEffect(() => {
         onDirtyChange?.(form.formState.isDirty);
     }, [form.formState.isDirty, onDirtyChange]);
-
-    const buildMetadata = (data: AutoreplyComposerFormData): Record<string, unknown> => {
-        const meta: Record<string, unknown> = {
-            schedule_type: data.schedule_type,
-        };
-        if (data.schedule_type === "date_range") {
-            meta.start_at = data.start_at;
-            meta.end_at = data.end_at;
-            if (data.timezone) meta.timezone = data.timezone;
-        }
-        if (data.schedule_type === "recurring_weekly") {
-            meta.intervals = [
-                {
-                    start_day: Number(data.interval_start_day),
-                    start_time: data.interval_start_time,
-                    end_day: Number(data.interval_end_day),
-                    end_time: data.interval_end_time,
-                },
-            ];
-            if (data.timezone) meta.timezone = data.timezone;
-        }
-        return meta;
-    };
 
     const onSubmit = async (data: AutoreplyComposerFormData): Promise<void> => {
         if (!composerRef.current) return;
@@ -280,7 +280,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                 html_body: htmlBody,
                 text_body: textBody,
                 raw_body: data.rawBody,
-                metadata: buildMetadata(data),
+                metadata: buildAutoreplyMetadata(data, defaultValue ? origin : undefined),
                 signature_id: signatureId,
             };
             if (defaultValue?.id) {
@@ -369,7 +369,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                             <RhfSelect
                                 label={t('Timezone')}
                                 name="timezone"
-                                options={TIMEZONE_OPTIONS}
+                                options={timeZoneSelectOptions}
                                 searchable
                                 fullWidth
                             />
@@ -409,7 +409,7 @@ const AutoreplyComposeForm = ({ mailboxId, defaultValue, onSuccess, onDirtyChang
                             <RhfSelect
                                 label={t('Timezone')}
                                 name="timezone"
-                                options={TIMEZONE_OPTIONS}
+                                options={timeZoneSelectOptions}
                                 searchable
                                 fullWidth
                             />

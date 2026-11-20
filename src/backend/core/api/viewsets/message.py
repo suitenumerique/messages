@@ -108,7 +108,10 @@ class MessageViewSet(
         if self.action == "list":
             thread_id = self.request.GET.get("thread_id")
             if thread_id:
-                queryset = queryset.filter(thread__id=thread_id).order_by("created_at")
+                # ``id`` breaks ties (imports share dates), as the split does.
+                queryset = queryset.filter(thread__id=thread_id).order_by(
+                    "created_at", "id"
+                )
             else:
                 return queryset.none()
 

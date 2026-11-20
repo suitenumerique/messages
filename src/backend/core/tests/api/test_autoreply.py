@@ -237,7 +237,19 @@ class TestAutoreplyMetadataValidation:
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    def test_recurring_weekly_invalid_time_values(self, user, mailbox, list_url):
+    @pytest.mark.parametrize(
+        ("start_time", "end_time"),
+        [
+            ("invalid", "08:00"),
+            # Python reads "24:00" as 00:00.
+            ("09:00", "24:00"),
+            ("24:00", "08:00"),
+            ("09:60", "10:00"),
+        ],
+    )
+    def test_recurring_weekly_invalid_time_values(
+        self, user, mailbox, list_url, start_time, end_time
+    ):
         """Reject intervals with invalid time strings."""
         factories.MailboxAccessFactory(
             mailbox=mailbox,
@@ -252,9 +264,9 @@ class TestAutoreplyMetadataValidation:
             intervals=[
                 {
                     "start_day": 1,
-                    "start_time": "invalid",
+                    "start_time": start_time,
                     "end_day": 5,
-                    "end_time": "08:00",
+                    "end_time": end_time,
                 }
             ],
         )
@@ -274,6 +286,114 @@ class TestAutoreplyMetadataValidation:
         payload = _autoreply_payload(timezone="Invalid/Timezone")
         response = client.post(list_url, payload, format="json")
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            123,
+            False,
+            0,
+            ["Europe/Paris"],
+            "../etc",
+            "a" * 300,
+            "posixrules",
+            "Europe/Paris\x00",
+            # In the zone list, but unknown to browsers.
+            "localtime",
+            "Factory",
+        ],
+    )
+    def test_invalid_timezone_type(self, user, mailbox, list_url, tz):
+        """Reject a timezone that is not a valid zone name, instead of a 500
+        here or a crash when an inbound message checks the schedule."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(timezone=tz)
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize("metadata", [["x"], [], "always", 1])
+    def test_metadata_not_an_object(self, user, mailbox, list_url, metadata):
+        """A metadata that is not an object is refused, not a 500."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = {**_autoreply_payload(), "metadata": metadata}
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "metadata" in response.data
+
+    @pytest.mark.parametrize("tz", [None, ""])
+    def test_empty_timezone_accepted(self, user, mailbox, list_url, tz):
+        """A null or empty timezone means UTC, as before."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(timezone=tz)
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == status.HTTP_201_CREATED
+
+    @pytest.mark.parametrize(
+        ("start_at", "end_at", "expected"),
+        [
+            # Naive values are read in the autoreply's timezone (Paris, +01:00).
+            ("2026-03-01T10:00:00", "2026-03-01T09:30:00Z", status.HTTP_201_CREATED),
+            (
+                "2026-03-01T10:00:00",
+                "2026-03-01T08:30:00Z",
+                status.HTTP_400_BAD_REQUEST,
+            ),
+            ("2026-03-01T08:30:00Z", "2026-03-01T10:00:00", status.HTTP_201_CREATED),
+            # Overflows datetime once in UTC.
+            (
+                "2026-03-01T00:00:00Z",
+                "9999-12-31T23:59:59-05:00",
+                status.HTTP_400_BAD_REQUEST,
+            ),
+            # Offsets past PostgreSQL's range, as plain JSON strings.
+            (
+                "2026-03-01T00:00:00+23:59",
+                "2026-03-01T00:00:00-23:59",
+                status.HTTP_201_CREATED,
+            ),
+        ],
+    )
+    def test_date_range_mixed_naive_and_aware(
+        self, user, mailbox, list_url, start_at, end_at, expected
+    ):
+        """A naive and an aware bound are compared without a TypeError."""
+        factories.MailboxAccessFactory(
+            mailbox=mailbox,
+            user=user,
+            role=enums.MailboxRoleChoices.ADMIN,
+        )
+        client = APIClient()
+        client.force_login(user)
+
+        payload = _autoreply_payload(
+            schedule_type="date_range",
+            start_at=start_at,
+            end_at=end_at,
+            timezone="Europe/Paris",
+        )
+        response = client.post(list_url, payload, format="json")
+        assert response.status_code == expected
 
 
 # ---------------------------------------------------------------------------

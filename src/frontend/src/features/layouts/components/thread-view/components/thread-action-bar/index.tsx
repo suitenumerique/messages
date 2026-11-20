@@ -1,5 +1,5 @@
 import { useMailboxContext } from "@/features/providers/mailbox";
-import useRead from "@/features/message/use-read";
+import useRead, { readAtNow } from "@/features/message/use-read";
 import useTrash from "@/features/message/use-trash";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components"
@@ -145,7 +145,7 @@ export const ThreadActionBar = ({ isTrashContext, canUnarchive }: ThreadActionBa
                             aria-label={t('Mark as read')}
                             size="nano"
                             icon={<Icon  name="mail-open" />}
-                            onClick={() => markAsReadAt({ threadIds: [selectedThread!.id], readAt: new Date().toISOString() })}
+                            onClick={() => markAsReadAt({ threadIds: [selectedThread!.id], readAt: readAtNow([selectedThread!.messaged_at]) })}
                         />
                     </Tooltip>
                 ) : (

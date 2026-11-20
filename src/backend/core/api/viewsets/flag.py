@@ -3,8 +3,9 @@
 import logging
 
 from django.db import transaction
+from django.db.models import DateTimeField, OuterRef, Subquery, Value
+from django.db.models.functions import Greatest, Least
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 import rest_framework as drf
 from drf_spectacular.utils import (
@@ -18,10 +19,39 @@ from rest_framework.views import APIView
 from core import models
 from core.services.search.tasks import update_threads_mailbox_flags_task
 from core.services.trashbin import trashbin_timestamp
+from core.utils import parse_utc_datetime
 
 from .. import permissions
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_starred_at(value):
+    """Parse a client ``starred_at``, clamped to now, or None if unusable."""
+    parsed = parse_utc_datetime(value)
+    if parsed is None:
+        return None
+    return min(parsed, timezone.now())
+
+
+def _clamped_read_at(read_at):
+    """``read_at`` as stored, no later than now or the thread's last message.
+
+    A client clock running ahead (or a crafted value) would otherwise keep
+    the mail that arrives later shown as read, for every user of the
+    mailbox. The thread's ``messaged_at`` bounds it too: it may be a little
+    ahead of this host's clock when the worker that stored the message runs
+    ahead, and reading up to it must still mark that message read.
+    """
+    last_message = models.Thread.objects.filter(pk=OuterRef("thread_id")).values(
+        "messaged_at"
+    )[:1]
+    # GREATEST ignores NULL in PostgreSQL: a thread without messages gives now.
+    return Least(
+        Value(read_at),
+        Greatest(Value(timezone.now()), Subquery(last_message)),
+        output_field=DateTimeField(),
+    )
 
 
 def _flag_update_data(flag, value, current_time):
@@ -377,11 +407,13 @@ class ChangeFlagView(APIView):
         read_at = request.data.get("read_at")
 
         # read_at must be None or a valid datetime string
-        if read_at is not None and parse_datetime(str(read_at)) is None:
-            return drf.response.Response(
-                {"detail": "read_at must be a valid ISO 8601 datetime."},
-                status=drf.status.HTTP_400_BAD_REQUEST,
-            )
+        if read_at is not None:
+            read_at = parse_utc_datetime(read_at)
+            if read_at is None:
+                return drf.response.Response(
+                    {"detail": "read_at must be a valid ISO 8601 datetime."},
+                    status=drf.status.HTTP_400_BAD_REQUEST,
+                )
 
         thread_qs = models.Thread.objects.filter(
             id__in=thread_ids,
@@ -396,7 +428,9 @@ class ChangeFlagView(APIView):
         thread_ids_to_sync = [
             str(tid) for tid in accesses.values_list("thread_id", flat=True)
         ]
-        updated_count = accesses.update(read_at=read_at)
+        updated_count = accesses.update(
+            read_at=None if read_at is None else _clamped_read_at(read_at)
+        )
 
         if thread_ids_to_sync:
             transaction.on_commit(
@@ -428,7 +462,7 @@ class ChangeFlagView(APIView):
         if value:
             # Use provided timestamp or default to now
             if starred_at is not None:
-                parsed = parse_datetime(str(starred_at))
+                parsed = _parse_starred_at(starred_at)
                 if parsed is None:
                     return drf.response.Response(
                         {"detail": "starred_at must be a valid ISO 8601 datetime."},

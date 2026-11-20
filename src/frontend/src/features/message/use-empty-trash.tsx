@@ -77,8 +77,9 @@ const readEmptyTrashTask = (mailboxId: string, scope: MailboxEmptyTrashRequestSc
             && "startedAt" in task && typeof task.startedAt === "number"
         ) {
             // Expired while no page was following it: the folder is fetched
-            // fresh anyway, so there is nothing to refresh.
-            if (Date.now() - task.startedAt > EMPTY_TRASH_TASK_MAX_AGE_MS) {
+            // fresh anyway, so there is nothing to refresh. ``abs``: with the
+            // device clock set back, the age is negative and never expires.
+            if (Math.abs(Date.now() - task.startedAt) > EMPTY_TRASH_TASK_MAX_AGE_MS) {
                 localStorage.removeItem(getEmptyTrashTaskStorageKey(mailboxId, scope));
                 return null;
             }

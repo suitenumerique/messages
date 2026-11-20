@@ -5,6 +5,7 @@ import re
 import socket
 import threading
 import time
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, call, patch
 
 from django.conf import settings
@@ -626,6 +627,23 @@ class TestSendMessageRedisLock(TransactionTestCase):
             self.message.refresh_from_db()
             assert self.message.sent_at is not None
 
+    def test_retry_keeps_first_sent_at(self):
+        """A later attempt does not move ``sent_at``: it is the date shown as
+        sent and the start of the manual retry age limit."""
+        cache.clear()
+        with patch("core.mda.outbound.send_outbound_message") as mock_send_outbound:
+            mock_send_outbound.return_value = {
+                "to@example.com": {"delivered": False, "error": "try later"}
+            }
+            outbound.send_message(self.message, force_mta_out=True)
+            self.message.refresh_from_db()
+            first = self.message.sent_at
+            assert first is not None
+
+            outbound.send_message(self.message, force_mta_out=True)
+            self.message.refresh_from_db()
+            assert self.message.sent_at == first
+
 
 @pytest.mark.django_db
 class TestPrepareOutboundMessageSignature:
@@ -740,6 +758,56 @@ class TestPrepareOutboundMessageSignature:
         assert (
             "Best regards,\r\nJohn Doe\r\nSoftware Engineer\r\nEngineering" in content
         )
+
+    @pytest.mark.parametrize("is_forward", [False, True])
+    @pytest.mark.parametrize(
+        ("date_header", "expected"),
+        [
+            # The Date: is what we stored: quoted with the sender's offset.
+            ("Mon, 09 Nov 2026 20:30:11 +0200", "Mon, 09 Nov 2026 20:30:11 +0200"),
+            ("Tue, 10 Nov 2026 10:29:11 +1559", "Tue, 10 Nov 2026 10:29:11 +1559"),
+            # Forged (clamped on delivery) or unreadable: the stored value.
+            ("Fri, 01 Jan 2099 00:00:00 -2359", "Mon, 09 Nov 2026 18:30:11 +0000"),
+            ("not a date", "Mon, 09 Nov 2026 18:30:11 +0000"),
+        ],
+    )
+    def test_prepare_outbound_message_quotes_stored_date(
+        self, user, mailbox_sender, mailbox_access, is_forward, date_header, expected
+    ):
+        """The quote header never shows a ``Date:`` that differs from the
+        parent's stored ``sent_at`` (in range, clamped to delivery)."""
+        raw = (
+            b"From: Bob <bob@example.com>\r\n"
+            b"To: someone@example.com\r\n"
+            b"Date: " + date_header.encode() + b"\r\n"
+            b"Subject: Original Subject\r\n"
+            b"Message-ID: <forged.date@example.com>\r\n\r\nOriginal body"
+        )
+        parent_message = factories.MessageFactory(
+            thread=factories.ThreadFactory(),
+            sender=factories.ContactFactory(mailbox=mailbox_sender),
+            subject="Original Subject",
+            blob=models.Blob.objects.create_blob(
+                content=raw, content_type="message/rfc822"
+            ),
+            sent_at=datetime(2026, 11, 9, 18, 30, 11, tzinfo=timezone.utc),
+        )
+        message = factories.MessageFactory(
+            thread=parent_message.thread,
+            sender=parent_message.sender,
+            subject=("Fwd: " if is_forward else "Re: ") + "Original Subject",
+            parent=parent_message,
+            is_draft=True,
+        )
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "My reply", "<p>My reply</p>", user
+        )
+        message.refresh_from_db()
+        content = message.blob.get_content().decode().replace("=\r\n", "")
+        assert expected in content
+        assert "2099" not in content
+        assert "not a date" not in content
 
     @override_settings(SCHEMA_CUSTOM_ATTRIBUTES_USER=SCHEMA_CUSTOM_ATTRIBUTES)
     def test_prepare_outbound_message_with_inactive_signature(

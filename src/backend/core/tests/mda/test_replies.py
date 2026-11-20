@@ -175,6 +175,37 @@ class TestMakeReply:
         assert "On" in text and "wrote:" in text
         assert "> How are you?" in text
 
+    @pytest.mark.parametrize(
+        ("sent_at", "expected"),
+        [
+            # ISO sentAt (what the parser emits), sender's offset kept.
+            ("2026-01-01T11:00:00+00:00", "Thu, 01 Jan 2026 11:00:00 +0000"),
+            ("2026-01-01T11:00:00+16:00", "Thu, 01 Jan 2026 11:00:00 +1600"),
+            ("2026-01-01T11:00:00-23:59", "Thu, 01 Jan 2026 11:00:00 -2359"),
+            ("2026-01-01T11:00:00", "Thu, 01 Jan 2026 11:00:00 +0000"),
+            ("9999-12-31T23:59:59-05:00", "Fri, 31 Dec 9999 23:59:59 -0500"),
+            # RFC 2822 still accepted.
+            ("Thu, 01 Jan 2026 11:00:00 +0200", "Thu, 01 Jan 2026 11:00:00 +0200"),
+            # An offset with seconds has no RFC 5322 form: shown in UTC.
+            ("2026-01-01T11:00:00+05:30:15", "Thu, 01 Jan 2026 05:29:45 +0000"),
+            ("0001-01-01T00:00:00+00:00:01", "an unknown date"),
+            # Unusable: a placeholder, not the raw value.
+            ("not a date\r\nInjected: x", "an unknown date"),
+            ("Thu, 01 Jan 99999 11:00:00 +0000", "an unknown date"),
+        ],
+    )
+    def test_quote_header_date(self, sent_at, expected):
+        """The quote header shows a formatted date, never the raw value."""
+        original = {
+            "subject": "Original",
+            "from": [{"name": "Bob", "email": "bob@example.com"}],
+            "sentAt": sent_at,
+            "textBody": [{"partId": "1", "content": "How are you?"}],
+        }
+        text = make_reply(original, "Reply")["textBody"][0]["content"]
+        assert f"On {expected}, " in text
+        assert "Injected" not in text
+
     def test_skips_threading_when_parent_id_malformed(self):
         """A bad parent id means no In-Reply-To and no References."""
         reply = make_reply({"subject": "Hi", "messageId": ["bad id@example.com"]}, "x")

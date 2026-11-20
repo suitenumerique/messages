@@ -145,11 +145,15 @@ class TestBackfillThreadSnippets:
         call_command("backfill_thread_snippets", "--before", "2000-01-01", stdout=out)
         assert "scanned=0 " in out.getvalue()
 
-    def test_before_invalid_value_raises(self):
-        """An unparseable --before aborts with an explicit error."""
+    @pytest.mark.parametrize(
+        "value", ["not-a-date", "2026-02-30", "9999-12-31T23:59:59-05:00"]
+    )
+    def test_before_invalid_value_raises(self, value):
+        """An unparseable, impossible or out-of-range --before aborts with an
+        explicit error, not a traceback."""
         with pytest.raises(CommandError, match="not a valid ISO date/datetime"):
             call_command(
-                "backfill_thread_snippets", "--before", "not-a-date", stdout=StringIO()
+                "backfill_thread_snippets", "--before", value, stdout=StringIO()
             )
 
     def test_concurrency_derives_the_same_snippets(self):

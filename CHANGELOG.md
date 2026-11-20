@@ -68,6 +68,60 @@ and this project adheres to
 - The DSFR theme jar `dsfr-2.3.4.jar`. A realm that selected the `DSFR` theme
   must select `lst-dsfr` once after the upgrade
 
+### Fixed
+
+- An inbound or imported message whose date has an offset beyond ±15:59, or
+  is outside the years 1-9999 once in UTC, is delivered instead of being
+  retried until abandoned #855
+- A message date in the future is stored as the delivery time, so it no
+  longer pins a thread at the top of the list or keeps later messages marked
+  as read. An import uses the date of its topmost `Received:` header instead,
+  then the import time. Reply quotes never show a date other than the stored
+  one
+- The `read_at` and `starred_at` of the flag API are refused when out of range
+  and clamped to now (`read_at`: to the thread's last message if later). A
+  year-10000 value made the thread fail to load for every mailbox sharing it
+- "Mark as read" no longer leaves the latest mail unread when the device clock
+  is behind the server's
+- A calendar invite with an invalid date no longer breaks the message view;
+  an invite that still fails to render is shown as a plain attachment.
+  All-day invites show their own days west of UTC, not the day before
+- The calendar conflicts check skips a stored event whose date cannot be
+  read instead of failing, and an invite added to the calendar drops dates
+  that cannot be read, repeated DTSTART and huge sub-hourly recurrences
+- A webhook's `mark_read` now marks the new message read in a thread read
+  before
+- A delivery retry keeps the message's first `sent_at`: the manual retry age
+  limit no longer restarts at each attempt
+- Splitting a thread whose messages share a date (imports) cuts in display
+  order and never moves the first message
+- Autoreply weekly intervals refuse `24:00`, which read as `00:00` and made
+  the interval cover the whole week; a stored one ends with the day, or
+  starts with the next, and the form opens it instead of failing to save
+- `compose_email` writes a sub-minute offset in UTC instead of an empty
+  `Date:`, and refuses a year before 100, which read back as a two-digit year
+- `backfill_postmark` and `backfill_thread_snippets` read a bare `--before`
+  date as midnight UTC and report an impossible date as an error
+- Startup check `core.E006` refuses duration settings over 100 years (e.g.
+  `TRASHBIN_CUTOFF_DAYS=999999`), which made the task using them fail
+- Silent login and the "empty trash" progress no longer stay stuck when the
+  device clock was set back
+- The PST import keeps a message whose `Date:` cannot be parsed, dated by the
+  MAPI timestamps, then its topmost `Received:`, which also replace a `Date:`
+  in the future
+- Autoreply date ranges are compared as instants, which was wrong in the hour
+  repeated when DST ends, and a naive bound no longer fails validation. A
+  stored invalid `timezone` falls back to UTC
+- The calendar conflicts API answers `400` to an out-of-range or non-string
+  `start` / `end`
+- An API key whose `expires_at` cannot be read (anything but a date, absent,
+  `null` or `""`) is refused as expired instead of never expiring, and
+  `expires_at` is validated on write
+- Migration `0038` clamps the dates already stored to the range above
+
+  _⚠️ Run `search_reindex --all --from-date <upgrade date>` after the
+  upgrade: the threads it changes are marked as updated._
+
 ### Security
 
 - Keycloak 26.8.2 fixes more than 30 CVEs, among them CVE-2026-117691 (SAML

@@ -11,10 +11,11 @@ import secrets
 import uuid
 from datetime import datetime as dt
 from datetime import time, timedelta
+from datetime import timezone as dt_timezone
 from functools import cached_property
 from logging import getLogger
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, available_timezones
 
 from django.conf import settings
 from django.contrib.auth import models as auth_models
@@ -3458,6 +3459,38 @@ class DKIMKey(BaseModel):
         return f"v=DKIM1; k={algorithm_enum.label}; p={self.public_key}"
 
 
+# Names of the zoneinfo directory that browsers do not know: the frontend
+# reads them as UTC, and "localtime" depends on the server.
+_AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS = frozenset({"localtime", "Factory"})
+
+
+def _autoreply_tz(metadata: dict) -> ZoneInfo:
+    """The autoreply's timezone, UTC when absent or invalid."""
+    name = metadata.get("timezone")
+    if isinstance(name, str) and name in _AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS:
+        return ZoneInfo("UTC")
+    try:
+        return ZoneInfo(name or "UTC")
+    except (KeyError, ValueError, TypeError, OSError):
+        return ZoneInfo("UTC")
+
+
+def _autoreply_range_utc(start_at, end_at, tz: ZoneInfo) -> tuple[dt, dt]:
+    """Parse a date_range autoreply's bounds as UTC instants.
+
+    Naive bounds are read in ``tz``. Compared in UTC: two datetimes sharing a
+    ZoneInfo compare by wall clock, ignoring ``fold``, which is wrong in the
+    hour repeated when DST ends. Raises ValueError, TypeError or OverflowError.
+    """
+    bounds = []
+    for value in (start_at, end_at):
+        parsed = dt.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=tz)
+        bounds.append(parsed.astimezone(dt_timezone.utc))
+    return bounds[0], bounds[1]
+
+
 class MessageTemplate(BaseModel):
     """Message template model to store reusable message templates and signatures."""
 
@@ -3698,9 +3731,10 @@ class MessageTemplate(BaseModel):
                     }
                 )
             try:
-                start = dt.fromisoformat(start_at)
-                end = dt.fromisoformat(end_at)
-            except (ValueError, TypeError) as exc:
+                start, end = _autoreply_range_utc(
+                    start_at, end_at, _autoreply_tz(metadata)
+                )
+            except (ValueError, TypeError, OverflowError) as exc:
                 raise ValidationError(
                     {
                         "metadata": "start_at and end_at must be valid ISO datetime strings."
@@ -3716,7 +3750,9 @@ class MessageTemplate(BaseModel):
                         "metadata": "recurring_weekly schedule requires 'intervals' as a list."
                     }
                 )
-            time_re = re.compile(r"^\d{2}:\d{2}$")
+            # Hours 00-23: Python reads "24:00" as 00:00, which would turn
+            # "09:00 → 24:00" into a span across the whole week.
+            time_re = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
             for interval in intervals:
                 if not isinstance(interval, dict):
                     raise ValidationError(
@@ -3749,14 +3785,18 @@ class MessageTemplate(BaseModel):
                             {"metadata": f"'{time_key}' must be a valid HH:MM string."}
                         ) from error
         # Validate timezone if provided
+        # Absent, null or "": UTC (see _autoreply_tz). Anything else must be
+        # a zone name.
         tz_name = metadata.get("timezone")
-        if tz_name:
-            try:
-                ZoneInfo(tz_name)
-            except (KeyError, ValueError) as exc:
-                raise ValidationError(
-                    {"metadata": f"Invalid timezone: {tz_name}"}
-                ) from exc
+        # A name from the system's time zone list: ZoneInfo also opens other
+        # files of the zoneinfo directory ("posixrules"), and raises OSError
+        # on a name too long for a path.
+        if tz_name not in (None, "") and (
+            not isinstance(tz_name, str)
+            or tz_name not in available_timezones()
+            or tz_name in _AUTOREPLY_TZ_UNKNOWN_TO_BROWSERS
+        ):
+            raise ValidationError({"metadata": f"Invalid timezone: {tz_name}"})
 
     def is_active_autoreply(self, now=None):
         """Check if this template is an active autoreply based on schedule.
@@ -3775,11 +3815,7 @@ class MessageTemplate(BaseModel):
         if schedule_type == "always":
             return True
 
-        tz_name = metadata.get("timezone", "UTC")
-        try:
-            tz = ZoneInfo(tz_name)
-        except (KeyError, ValueError):
-            tz = ZoneInfo("UTC")
+        tz = _autoreply_tz(metadata)
 
         if now is None:
             now = timezone.now()
@@ -3791,16 +3827,10 @@ class MessageTemplate(BaseModel):
             if not start_at or not end_at:
                 return False
             try:
-                start = dt.fromisoformat(start_at)
-                end = dt.fromisoformat(end_at)
-            except (ValueError, TypeError):
+                start, end = _autoreply_range_utc(start_at, end_at, tz)
+            except (ValueError, TypeError, OverflowError):
                 return False
-            # Make timezone-aware if naive
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=tz)
-            if end.tzinfo is None:
-                end = end.replace(tzinfo=tz)
-            return start <= local_now <= end
+            return start <= now.astimezone(dt_timezone.utc) <= end
 
         if schedule_type == "recurring_weekly":
             intervals = metadata.get("intervals", [])
@@ -3810,10 +3840,20 @@ class MessageTemplate(BaseModel):
 
             for interval in intervals:
                 try:
-                    st = time.fromisoformat(interval["start_time"])
-                    et = time.fromisoformat(interval["end_time"])
                     sd = interval["start_day"]
                     ed = interval["end_day"]
+                    # Stored before validation refused it, "24:00" is the end
+                    # of the day, not its 00:00: a start then begins with the
+                    # next day, an end ends with this one.
+                    if interval["start_time"] == "24:00":
+                        sd, st = sd % 7 + 1, time.min
+                    else:
+                        st = time.fromisoformat(interval["start_time"])
+                    et = (
+                        time.max
+                        if interval["end_time"] == "24:00"
+                        else time.fromisoformat(interval["end_time"])
+                    )
                 except (KeyError, ValueError, TypeError):
                     continue
                 start = (sd, st)

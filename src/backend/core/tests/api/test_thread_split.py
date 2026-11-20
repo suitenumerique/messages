@@ -318,6 +318,36 @@ def test_split_thread_multi_message(api_client):
         assert msg.thread_id == new_thread.id
 
 
+def test_split_thread_messages_sharing_a_date(api_client):
+    """Imported messages often share a ``created_at`` (``Date:`` is to the
+    second): the cut follows the (created_at, id) order, so the first
+    message never moves and the old thread is never left empty."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    same = timezone.now() - timedelta(days=1)
+    messages = sorted(
+        (MessageFactory(thread=thread, sender=contact) for _ in range(3)),
+        key=lambda m: m.id,
+    )
+    for msg in messages:
+        type(msg).objects.filter(pk=msg.pk).update(created_at=same)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.post(
+        _get_split_url(thread.id), {"message_id": str(messages[1].id)}
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+    new_thread_id = response.data["id"]
+
+    for msg in messages:
+        msg.refresh_from_db()
+    assert messages[0].thread_id == thread.id
+    assert [m.thread_id for m in messages[1:]] == [uuid.UUID(new_thread_id)] * 2
+
+
 def test_split_thread_accesses_copied(api_client):
     """All ThreadAccess entries are copied to the new thread."""
     user = UserFactory()
@@ -472,6 +502,75 @@ def test_split_thread_parent_references_fixed(api_client):
     # msg3's parent was msg2 which moved too -> should remain
     msg3.refresh_from_db()
     assert msg3.parent_id == msg2.id
+
+
+def test_split_thread_sharing_a_date_cuts_in_display_order(api_client):
+    """The thread view lists messages sharing a date in the order the split
+    cuts: splitting at the second one shown keeps the first one shown."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    same = timezone.now() - timedelta(days=1)
+    # Stored in decreasing id order: the table order differs from the cut's.
+    for index in range(4):
+        message = MessageFactory(
+            thread=thread,
+            sender=contact,
+            id=uuid.UUID(int=(4 - index) << 64),
+        )
+        type(message).objects.filter(pk=message.pk).update(created_at=same)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.get(
+        reverse("messages-list"),
+        {"thread_id": str(thread.id), "mailbox_id": str(mailbox.id)},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    shown = [item["id"] for item in response.data]
+
+    response = api_client.post(_get_split_url(thread.id), {"message_id": shown[1]})
+    assert response.status_code == status.HTTP_201_CREATED
+
+    new_thread = Thread.objects.get(pk=response.data["id"])
+    moved = {str(pk) for pk in new_thread.messages.values_list("id", flat=True)}
+    assert moved == set(shown[1:])
+
+
+def test_split_thread_kept_message_with_moved_parent(api_client):
+    """Out of order dates (imports): a kept message whose parent moves loses
+    the link too; links within each side stay."""
+    user = UserFactory()
+    api_client.force_authenticate(user=user)
+    mailbox = MailboxFactory()
+    thread = ThreadFactory()
+    contact = ContactFactory(mailbox=mailbox)
+    now = timezone.now()
+
+    first = MessageFactory(thread=thread, sender=contact)
+    later_parent = MessageFactory(thread=thread, sender=contact)
+    early_reply = MessageFactory(thread=thread, sender=contact, parent=later_parent)
+    kept_reply = MessageFactory(thread=thread, sender=contact, parent=first)
+    for msg, offset in (
+        (first, timedelta(0)),
+        (later_parent, timedelta(minutes=2)),
+        (early_reply, timedelta(minutes=1)),
+        (kept_reply, timedelta(seconds=30)),
+    ):
+        type(msg).objects.filter(pk=msg.pk).update(created_at=now + offset)
+    _setup_editor_access(user, mailbox, thread)
+
+    response = api_client.post(
+        _get_split_url(thread.id), {"message_id": str(later_parent.id)}
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+
+    early_reply.refresh_from_db()
+    assert early_reply.thread_id == thread.id
+    assert early_reply.parent is None
+    kept_reply.refresh_from_db()
+    assert kept_reply.parent_id == first.id
 
 
 def test_split_thread_stats_snippet_updated(api_client):

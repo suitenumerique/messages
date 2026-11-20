@@ -8,7 +8,7 @@ import email
 import email.utils
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy
 from email.header import decode_header, make_header
 from email.parser import BytesParser
@@ -1496,6 +1496,49 @@ class TestComposerSecurityAndHardening:
         result = _normalize_date("2024-06-15T12:00:00Z")
         assert result.year == 2024 and result.month == 6 and result.day == 15
         assert result.tzinfo is not None
+
+    @pytest.mark.parametrize(
+        ("date", "header"),
+        [
+            # No RFC 5322 form for an offset with seconds: written in UTC.
+            ("2026-01-01T10:00:00+01:00:30", "Thu, 01 Jan 2026 08:59:30 +0000"),
+            (
+                datetime(2026, 1, 1, 10, tzinfo=timezone(timedelta(minutes=-90))),
+                "Thu, 01 Jan 2026 10:00:00 -0130",
+            ),
+            ("0100-01-01T00:00:00+00:00", "Fri, 01 Jan 0100 00:00:00 +0000"),
+        ],
+    )
+    def test_t5_date_header_round_trips(self, date, header):
+        """The ``Date:`` written reads back as the same instant."""
+        raw = compose_email(
+            {
+                "from": [{"email": "s@example.com"}],
+                "to": [{"email": "r@example.com"}],
+                "subject": "t",
+                "sentAt": date,
+                "textBody": "x",
+            }
+        )
+        written = email.message_from_bytes(raw)["Date"]
+        assert written == header
+        assert email.utils.parsedate_to_datetime(written) == _normalize_date(date)
+
+    @pytest.mark.parametrize(
+        "date",
+        [
+            "0050-01-01T00:00:00+00:00",
+            datetime(99, 12, 31, tzinfo=timezone.utc),
+            # Epoch for year 1.
+            -62135596800,
+            # Out of range once converted to UTC for its seconds offset.
+            "0001-01-01T00:00:00+00:00:30",
+        ],
+    )
+    def test_t5_normalize_date_rejects_what_cannot_round_trip(self, date):
+        """A year below 100 reads back as a two-digit year: refused."""
+        with pytest.raises(InvalidDateError):
+            _normalize_date(date)
 
     # --- T6: compose_email is non-mutating ------------------------------
 

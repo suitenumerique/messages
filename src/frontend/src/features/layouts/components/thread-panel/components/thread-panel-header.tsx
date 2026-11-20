@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Checkbox, Spinner } from "@gouvfr-lasuite/ui-components";
 import { Tooltip } from "@/features/ui/components/tooltip";
-import useRead from "@/features/message/use-read";
+import useRead, { readAtNow } from "@/features/message/use-read";
 import { DropdownMenu, IconType, VerticalSeparator, useResponsive } from "@gouvfr-lasuite/ui-components";
 import { useCurrentView } from "@/hooks/use-current-view";
 import useArchive from "@/features/message/use-archive";
@@ -113,6 +113,15 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
         }
         return threads?.results.map((thread) => thread.id) || [];
     }, [selectedThreadIds, threads?.results]);
+
+    const readAtNowForMarked = () => {
+        const marked = new Set(threadIdsToMark);
+        return readAtNow(
+            (threads?.results ?? [])
+                .filter((thread) => marked.has(thread.id))
+                .map((thread) => thread.messaged_at),
+        );
+    };
 
     const isNative = isNativePlatform();
     const markAllTooltip = isSomeSelected ? t('Mark as read') : t('Mark all as read');
@@ -258,7 +267,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         onClearSelection();
                         markAsReadAt({
                             threadIds: threadIdsToMark,
-                            readAt: selectionReadStatus === SelectionReadStatus.READ ? null : new Date().toISOString(),
+                            readAt: selectionReadStatus === SelectionReadStatus.READ ? null : readAtNowForMarked(),
                         });
                     }}
                     icon={<Icon name={selectionReadStatus === SelectionReadStatus.READ ? 'mail-unread' : 'mail-open'} type={IconType.OUTLINED} />}
@@ -415,7 +424,7 @@ const ThreadPanelTitle = ({ selectedThreadIds, isAllSelected, isSomeSelected, is
                         callback: () => {
                             markAsReadAt({
                                 threadIds: threadIdsToMark,
-                                readAt: new Date().toISOString(),
+                                readAt: readAtNowForMarked(),
                                 onSuccess: () => {
                                     unselectThreadIfAmong(threadIdsToMark);
                                     onClearSelection();

@@ -4,6 +4,9 @@ import { format, isToday, isSameWeek, isYesterday, isSameYear, isValid } from 'd
 import * as locales from 'date-fns/locale';
 import i18n from '../i18n/initI18n';
 
+/** A trailing UTC offset, with optional seconds (see ``hasOffset``). */
+const OFFSET_RE = /(?:Z|([+-])(\d{2}):?(\d{2})(?::?(\d{2})(?:\.\d+)?)?)$/i;
+
 export class DateHelper {
   /**
    * Formats a date string based on how recent it is:
@@ -18,6 +21,8 @@ export class DateHelper {
    */
   public static formatDate(dateString: string, lng: string = 'en', showTime: boolean = true): string {
     const date = new Date(dateString);
+    // date-fns throws on an invalid date, during render.
+    if (!isValid(date)) return '';
     const locale = lng.length > 2 ? lng.split('-')[0] : lng;
     const dateLocale = locales[locale as keyof typeof locales];
 
@@ -44,19 +49,83 @@ export class DateHelper {
   }
 
   /**
-   * Format a date with its time in a locale-aware long form
-   * (e.g. "Oct 20, 2026, 6:00 PM" or "20 oct. 2026, 18:00").
+   * Format a wall-clock time (`YYYY-MM-DDTHH:mm[:ss]`) as written, with its
+   * time, in a locale-aware form (e.g. "Oct 20, 2026, 6:00 PM" or
+   * "20 oct. 2026, 18:00"). In no time zone: read as a local time, one in a
+   * skipped hour of this browser's zone would show an hour later.
    *
-   * @param dateString - The date string to format
-   * @param lng - The locale code (e.g., 'fr', 'en')
-   * @returns Formatted date and time, or undefined if the date is invalid
+   * @param wallClock - The wall-clock time to format
+   * @param lng - The locale code (e.g., 'fr', 'en-US')
+   * @returns Formatted date and time, or undefined if the time is invalid
    */
-  public static formatDateTime(dateString: string, lng: string = 'en'): string | undefined {
-    const date = new Date(dateString);
-    if (!isValid(date)) return undefined;
-    const locale = lng.length > 2 ? lng.split('-')[0] : lng;
-    const dateLocale = locales[locale as keyof typeof locales];
-    return format(date, 'PPp', { locale: dateLocale });
+  public static formatWallClock(wallClock: string, lng: string = 'en'): string | undefined {
+    const instant = DateHelper.fromWallClock(wallClock, 'UTC');
+    if (Number.isNaN(instant)) return undefined;
+    return new Intl.DateTimeFormat(lng, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(instant);
+  }
+
+  /**
+   * The IANA time zone `value` names, or UTC when it is not a non-empty
+   * string or this browser does not know it. Mirrors how the backend reads
+   * an auto-reply's time zone.
+   */
+  public static resolveTimeZone(value: unknown): string {
+    if (typeof value !== 'string' || !value) return 'UTC';
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value });
+      return value;
+    } catch {
+      return 'UTC';
+    }
+  }
+
+  /**
+   * Whether two IANA names are the same zone for this browser, aliases
+   * included ("Asia/Kolkata" and "Asia/Calcutta", "UTC" and "Etc/UTC").
+   */
+  public static isSameTimeZone(a: string, b: string): boolean {
+    const canonical = (timeZone: string) => {
+      try {
+        return new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
+      } catch {
+        return timeZone;
+      }
+    };
+    return canonical(a) === canonical(b);
+  }
+
+  /**
+   * The instant (ms since the epoch) of a wall-clock time
+   * (`YYYY-MM-DDTHH:mm[:ss]`) in `timeZone`, read as the backend reads a naive
+   * autoreply bound (Python zoneinfo, `fold=0`): in a repeated hour, the
+   * first occurrence; in a skipped hour, with the offset from before the
+   * change. NaN if the time or the zone is invalid.
+   */
+  public static fromWallClock(wallClock: string, timeZone: string): number {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(wallClock);
+    if (!match) return NaN;
+    const [year, month, day, hour, minute, second] = match.slice(1).map((part) => Number(part ?? 0));
+    // Not ``Date.UTC``, which reads years 0-99 as 1900-1999.
+    const asUtcDate = new Date(0);
+    asUtcDate.setUTCFullYear(year, month - 1, day);
+    asUtcDate.setUTCHours(hour, minute, second, 0);
+    const asUtc = asUtcDate.getTime();
+    if (Number.isNaN(asUtc)) return NaN;
+    const offsetAt = (instant: number): number => {
+      const wall = DateHelper.wallClockAt(instant, timeZone);
+      if (!wall) return NaN;
+      return Date.parse(`${wall}Z`) - instant;
+    };
+    // At most one change within a day: the offsets either side of it.
+    const before = offsetAt(asUtc - 86400000);
+    const after = offsetAt(asUtc + 86400000);
+    if (Number.isNaN(before) || Number.isNaN(after)) return NaN;
+    const candidates = [asUtc - before, asUtc - after].filter(
+      (instant) => instant + offsetAt(instant) === asUtc,
+    );
+    // Two: a repeated hour, the first occurrence. None: a skipped hour, the
+    // offset from before the change.
+    return candidates.length ? Math.min(...candidates) : asUtc - before;
   }
 
   /**
@@ -71,14 +140,67 @@ export class DateHelper {
    * is invalid
    */
   public static toWallClock(dateString: string, timeZone: string): string | undefined {
-    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(dateString)) return dateString;
-    const date = new Date(dateString);
+    if (!DateHelper.hasOffset(dateString)) return dateString;
+    return DateHelper.wallClockAt(DateHelper.offsetInstant(dateString), timeZone);
+  }
+
+  /**
+   * Whether an ISO date-time ends with a UTC offset: `Z`, `±HH:MM`, `±HHMM`,
+   * or with seconds as Python writes them (`+01:00:30`).
+   */
+  public static hasOffset(dateString: string): boolean {
+    return OFFSET_RE.test(dateString);
+  }
+
+  /**
+   * The instant (ms since the epoch) of an ISO date-time with an offset,
+   * including an offset with seconds, which `Date.parse` refuses. NaN
+   * otherwise.
+   */
+  public static offsetInstant(dateString: string): number {
+    const match = OFFSET_RE.exec(dateString);
+    if (!match) return NaN;
+    const local = Date.parse(`${dateString.slice(0, match.index)}Z`);
+    if (!match[1]) return local;
+    const sign = match[1] === '-' ? -1 : 1;
+    const seconds = (Number(match[2]) * 60 + Number(match[3])) * 60 + Number(match[4] ?? 0);
+    return local - sign * seconds * 1000;
+  }
+
+  /**
+   * Compare two ISO date-times as instants, down to the microseconds the
+   * backend stores and a Date drops: negative, zero or positive, NaN if
+   * either cannot be read.
+   */
+  public static compareInstants(a: string, b: string): number {
+    const diff = new Date(a).getTime() - new Date(b).getTime();
+    if (diff !== 0 || Number.isNaN(diff)) return diff;
+    return DateHelper.subMillisecond(a) - DateHelper.subMillisecond(b);
+  }
+
+  /**
+   * The fraction of `value` below the millisecond (the digits a Date drops),
+   * as a number comparable between values: "…00.123456Z" gives 0.456.
+   */
+  private static subMillisecond(value: string): number {
+    const fraction = /T[\d:]+\.(\d+)/.exec(value)?.[1] ?? '';
+    return fraction.length > 3 ? Number(`0.${fraction.slice(3)}`) : 0;
+  }
+
+  /**
+   * The wall-clock time (`YYYY-MM-DDTHH:mm:ss`) of `instant` in `timeZone`.
+   * Undefined if invalid, before year 1 (which Python cannot represent), or
+   * if this browser does not know the zone.
+   */
+  private static wallClockAt(instant: number, timeZone: string): string | undefined {
+    const date = new Date(instant);
     if (!isValid(date)) return undefined;
     try {
       const parts = Object.fromEntries(
         new Intl.DateTimeFormat('en-US', {
           timeZone,
           hourCycle: 'h23',
+          era: 'short',
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
@@ -87,7 +209,10 @@ export class DateHelper {
           second: '2-digit',
         }).formatToParts(date).map(({ type, value }) => [type, value]),
       );
-      return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+      if (parts.era !== 'AD') return undefined;
+      // ``numeric`` leaves years before 1000 unpadded.
+      const year = parts.year.padStart(4, '0');
+      return `${year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
     } catch {
       // Unknown time zone for this browser's ICU data.
       return undefined;
@@ -113,6 +238,7 @@ export class DateHelper {
    */
   public static formatEventTimestamp(dateString: string, lng: string = 'en'): string {
     const date = new Date(dateString);
+    if (!isValid(date)) return '';
     const locale = lng.length > 2 ? lng.split('-')[0] : lng;
     const dateLocale = locales[locale as keyof typeof locales];
     const time = format(date, 'HH:mm', { locale: dateLocale });

@@ -23,6 +23,8 @@ import { fetchAPI } from "@/features/api/fetch-api";
 import { useTaskStatus } from "@/hooks/use-task-status";
 import {
     getEventEnd,
+    getEventStart,
+    isDateOnlyEvent,
     TextHelper,
     formatEventDateRange,
     formatRecurrenceRule,
@@ -384,7 +386,7 @@ const EventCard = ({
     const [showAllAttendees, setShowAllAttendees] = useState(false);
     const [showFullDescription, setShowFullDescription] = useState(false);
 
-    const eventStart = event.start?.date;
+    const eventStart = getEventStart(event);
     const eventEnd = getEventEnd(event);
     const attendeeEntries = useMemo(() => buildAttendeeList(event), [event]);
     const hasAttendees = attendeeEntries.length > 0;
@@ -480,6 +482,7 @@ const EventCard = ({
                                 eventStart,
                                 eventEnd,
                                 language,
+                                isDateOnlyEvent(event),
                             )}
                         </span>
                     </div>
@@ -854,7 +857,7 @@ export const CalendarInvite = ({
         () => calendars.some(calendarMatchesAttendee),
         [calendars, calendarMatchesAttendee],
     );
-    const eventStart = firstEvent?.start?.date;
+    const eventStart = getEventStart(firstEvent);
     const eventEnd = getEventEnd(firstEvent);
     const eventUid = firstEvent?.uid;
 

@@ -377,6 +377,109 @@ class TestReconstructEml:
             2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
         )
 
+    @pytest.mark.parametrize(
+        "date_header",
+        [
+            # Parses, but in the future or outside the years 1-9999 in UTC.
+            "Fri, 01 Jan 2099 00:00:00 +0000",
+            "Fri, 31 Dec 9999 23:59:59 -0500",
+            "9999-12-31T23:59:59-05:00",
+            # Before year 100: no RFC 5322 form that reads back.
+            "0050-01-01T00:00:00+00:00",
+            "Mon, 26 May 2025 10:00:00 +2400",
+            "Mon, 26 May 2025 25:00:00 +0000",
+            "lundi 26 mai 2025",
+            "Fri, 31 Dec 99999 23:59:59 +0000",
+        ],
+    )
+    def test_reconstruct_unparseable_date_uses_delivery_time(self, date_header):
+        """An unparseable Date in the transport headers falls back to the MAPI
+        delivery time instead of failing the whole message."""
+        msg = _make_message(
+            transport_headers=f"From: sender@example.com\r\nDate: {date_header}\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.parametrize(
+        ("date_header", "expected"),
+        [
+            ("2025-05-26T10:00:00+02:00", "Mon, 26 May 2025 10:00:00 +0200"),
+            ("2025-05-26T10:00:00Z", "Mon, 26 May 2025 10:00:00 +0000"),
+            ("2025-05-26T10:00:00", "Mon, 26 May 2025 10:00:00 +0000"),
+            # An offset with seconds has no RFC 5322 form: written in UTC.
+            ("2025-05-26T10:00:00+05:30:15", "Mon, 26 May 2025 04:29:45 +0000"),
+        ],
+    )
+    def test_reconstruct_accepts_iso_date(self, date_header, expected):
+        """An ISO 8601 Date (written by some exporters) is kept, not replaced by
+        the MAPI fallback."""
+        msg = _make_message(
+            transport_headers=f"From: sender@example.com\r\nDate: {date_header}\r\n",
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert parsed["Date"] == expected
+
+    def test_reconstruct_keeps_extreme_offset(self):
+        """A Date with an offset past PostgreSQL's range is kept as written;
+        inbound_create converts it to UTC."""
+        msg = _make_message(
+            transport_headers=(
+                "From: sender@example.com\r\nDate: Mon, 26 May 2025 10:00:00 +1600\r\n"
+            ),
+            delivery_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+
+        assert parsed["Date"] == "Mon, 26 May 2025 10:00:00 +1600"
+
+    def test_reconstruct_skips_a_future_mapi_time(self):
+        """A future delivery time (crafted PST) is passed over for the next
+        usable timestamp; with none usable, the epoch."""
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        msg = _make_message(
+            transport_headers=None,
+            delivery_time=future,
+            client_submit_time=datetime(2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc),
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2024, 2, 3, 4, 5, 6, tzinfo=timezone.utc
+        )
+
+        msg = _make_message(transport_headers=None, delivery_time=future)
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            1970, 1, 1, tzinfo=timezone.utc
+        )
+
+    def test_reconstruct_future_date_falls_back_to_received(self):
+        """A future ``Date:`` with no usable MAPI time takes the topmost
+        ``Received:`` date rather than the epoch, as the inbound step would."""
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        msg = _make_message(
+            transport_headers=(
+                "Received: from relay.example.com (relay.example.com [192.0.2.1])\r\n"
+                "\tby mx.example.org; Tue, 4 Mar 2025 10:20:30 +0100\r\n"
+                "Received: from origin.example.com by relay.example.com;\r\n"
+                " Tue, 4 Mar 2025 09:00:00 +0100\r\n"
+                "From: sender@example.com\r\n"
+                "Subject: Future\r\n"
+                "Date: Thu, 1 Jan 2099 00:00:00 +0000\r\n"
+            ),
+            delivery_time=future,
+        )
+        parsed = email.message_from_bytes(reconstruct_eml(msg))
+        assert email.utils.parsedate_to_datetime(parsed["Date"]) == datetime(
+            2025, 3, 4, 9, 20, 30, tzinfo=timezone.utc
+        )
+
     def test_reconstruct_without_sent_time_uses_creation_time(self):
         """A message with no delivery/submit time (e.g. a draft) is dated by the
         record's creation time instead of the epoch."""
