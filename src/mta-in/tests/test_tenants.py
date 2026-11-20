@@ -381,3 +381,23 @@ async def test_a_slow_tenant_gets_the_sender_a_451_although_another_tenant_took_
     (call,) = mdas["a"].delivered
     assert call["original_recipients"] == ["second@a.example"]
     assert reply.startswith(b"451 4.3.0 Delivery timed out"), reply
+
+
+@pytest.mark.asyncio
+async def test_accepted_recipient_still_delivered_on_removed_tenant(tenants_file):
+    clock = Clock()
+    router = _router(tenants_file, clock)
+    old_b = router.route("x@b.example").mda
+    async with listening(handler=InboundHandler(router=router)) as port, connected(port) as client:
+        await client.cmd(b"EHLO mx.sender.example")
+        await client.cmd(b"MAIL FROM:<sender@example.org>")
+        assert (await client.cmd(b"RCPT TO:<one@b.example>")).startswith(b"250")
+        _write(tenants_file, {"a": _tenant("a", "a.example")})
+        clock.now = 10
+        assert (await client.cmd(b"RCPT TO:<two@a.example>")).startswith(b"250")
+        assert router.route("x@b.example") is None
+        reply = await client.data()
+    assert reply == b"250 2.0.0 Message accepted for delivery\r\n"
+    assert [d["original_recipients"] for d in old_b.delivered] == [["one@b.example"]]
+    a = router.route("x@a.example").mda
+    assert [d["original_recipients"] for d in a.delivered] == [["two@a.example"]]
