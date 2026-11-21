@@ -166,15 +166,33 @@
   margin: 0;
 
   &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--xs);
     padding: var(--c--globals--spacings--sm);
     font-size: var(--c--components--forms-select--item-font-size);
     color: var(--c--components--forms-select--item-color);
     cursor: pointer;
 
+    &__remove {
+      flex-shrink: 0;
+      visibility: hidden;
+
+      // A touch screen has no hover to highlight the option with.
+      @media (hover: none) {
+        visibility: visible;
+      }
+    }
+
     &--highlight {
       background-color: var(
         --c--components--forms-select--item-background-color--hover
       );
+
+      .c__combobox__menu__item__remove {
+        visibility: visible;
+      }
     }
 
     &--selected {

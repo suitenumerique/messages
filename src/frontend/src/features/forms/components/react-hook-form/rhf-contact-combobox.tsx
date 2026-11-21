@@ -1,4 +1,4 @@
-import { useContactsList } from "@/features/api/gen";
+import { getContactsListQueryKey, useContactsDestroy, useContactsList } from "@/features/api/gen";
 import { ComboBox, ComboBoxProps } from "../combobox";
 import { useMemo, useState } from "react";
 import { useMailboxContext } from "@/features/providers/mailbox";
@@ -6,6 +6,9 @@ import { UserRow } from "@gouvfr-lasuite/ui-components";
 import { Controller, useFormContext } from "react-hook-form";
 import MailHelper from "@/features/utils/mail-helper";
 import clsx from "clsx";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 
 type RhfContactComboBoxProps = Omit<ComboBoxProps, 'options'> & {
     name: string;
@@ -14,14 +17,30 @@ type RhfContactComboBoxProps = Omit<ComboBoxProps, 'options'> & {
     warning?: boolean;
 };
 
+const CONTACTS_STALE_TIME = 5 * 60 * 1000;
+
 export const RhfContactComboBox = ({ warning = false, ...props }: RhfContactComboBoxProps) => {
+    const { t } = useTranslation();
     const { control, setValue } = useFormContext();
     const [searchQuery, setSearchQuery] = useState("");
     const { selectedMailbox } = useMailboxContext();
+    const queryClient = useQueryClient();
     const contactsQuery = useContactsList({ mailbox_id: selectedMailbox?.id }, {
         query: {
             enabled: !!selectedMailbox?.id,
+            // The whole list is fetched at once, so it is not worth refetching
+            // on every composer opening or tab focus. Sending a message, the
+            // only way to add a suggestion, invalidates it.
+            staleTime: CONTACTS_STALE_TIME,
         }
+    });
+    const hideContactMutation = useContactsDestroy({
+        mutation: {
+            onSuccess: () => {
+                queryClient.invalidateQueries({ queryKey: getContactsListQueryKey({ mailbox_id: selectedMailbox?.id }) });
+                addToast(<ToasterItem type="info"><span>{t("Contact removed from suggestions.")}</span></ToasterItem>);
+            },
+        },
     });
     // MARK: Currently the contact list endpoint is not paginated, so we get the full list of contact
     // At first it is good as we are able to filter locally so we have a really good reactive UI
@@ -49,6 +68,20 @@ export const RhfContactComboBox = ({ warning = false, ...props }: RhfContactComb
         }));
     }, [contacts]);
 
+    const contactsByEmail = useMemo(
+        () => new Map(contacts.map(contact => [contact.email, contact])),
+        [contacts]
+    );
+
+    const getOptionRemoval: ComboBoxProps["getOptionRemoval"] = (option) => {
+        const contact = option.value ? contactsByEmail.get(option.value) : undefined;
+        if (!contact?.can_hide) return undefined;
+        return {
+            label: t("Remove {{email}} from suggestions", { email: contact.email }),
+            onRemove: () => hideContactMutation.mutate({ id: contact.id }),
+        };
+    };
+
     return (
         <Controller
             control={control}
@@ -71,6 +104,7 @@ export const RhfContactComboBox = ({ warning = false, ...props }: RhfContactComb
                     onChange={(value) => setValue(props.name, value, { shouldDirty: true })}
                     onInputChange={(value) => setSearchQuery(value.trim())}
                     options={contactsOptions}
+                    getOptionRemoval={getOptionRemoval}
                 />
                 );
             }}

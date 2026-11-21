@@ -36,6 +36,7 @@ export * from "./config_retrieve200_servicemessage_link_label";
 export * from "./config_retrieve200_servicemessage_message";
 export * from "./config_retrieve200_servicemessage_variant";
 export * from "./contact";
+export * from "./contact_suggestion";
 export * from "./contacts_list_params";
 export * from "./delivery_status_update_response";
 export * from "./dnscheck_response";

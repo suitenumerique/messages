@@ -5,20 +5,27 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { Contact, ContactsListParams } from ".././models";
+import type {
+  Contact,
+  ContactSuggestion,
+  ContactsListParams,
+} from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 import type { ErrorType } from "../../fetch-api";
@@ -27,15 +34,16 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
  * List contacts with optional filtering by mailbox and search query.
-For a mailbox, it returns all contacts in the mailbox and all contacts
-in the same domain as the mailbox.
+For a mailbox, it returns the contacts the mailbox sent a message to
+and all contacts in the same domain as the mailbox. Contacts removed
+from the suggestions are left out.
 
 Query parameters:
 - mailbox_id: Optional UUID to filter contacts by mailbox
 - q: Optional search query for name or email (case insensitive)
  */
 export type contactsListResponse200 = {
-  data: Contact[];
+  data: ContactSuggestion[];
   status: 200;
 };
 
@@ -371,3 +379,102 @@ export function useContactsRetrieve<
 
   return query;
 }
+
+/**
+ * Remove a contact from the recipient suggestions of its mailbox.
+
+The contact itself is kept, as the messages it sent or received still
+reference it. It is suggested again once a message is sent to it.
+ */
+export type contactsDestroyResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type contactsDestroyResponseSuccess = contactsDestroyResponse204 & {
+  headers: Headers;
+};
+export type contactsDestroyResponse = contactsDestroyResponseSuccess;
+
+export const getContactsDestroyUrl = (id: string) => {
+  return `/api/v1.0/contacts/${id}/`;
+};
+
+export const contactsDestroy = async (
+  id: string,
+  options?: RequestInit,
+): Promise<contactsDestroyResponse> => {
+  return fetchAPI<contactsDestroyResponse>(getContactsDestroyUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getContactsDestroyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof contactsDestroy>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof contactsDestroy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["contactsDestroy"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof contactsDestroy>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return contactsDestroy(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ContactsDestroyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof contactsDestroy>>
+>;
+
+export type ContactsDestroyMutationError = ErrorType<unknown>;
+
+export const useContactsDestroy = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof contactsDestroy>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof contactsDestroy>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationOptions = getContactsDestroyMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
