@@ -27,6 +27,8 @@ import { MailboxSettingsAutorepliesTab } from "./autoreplies-tab";
 import { MailboxSettingsIntegrationsTab } from "./integrations-tab";
 import { MailboxSettingsImportsTab, ImportsTabView } from "./imports-tab";
 import { MailboxSettingsStorageTab } from "./storage-tab";
+import { MailboxSettingsCalendarTab } from "./calendar-tab";
+import { useMailboxCalendars } from "@/features/layouts/components/thread-view/components/calendar-invite/calendars";
 import { ImportNewTitle } from "../imports-view/import-new-title";
 
 export type SettingsTabId =
@@ -37,7 +39,8 @@ export type SettingsTabId =
   | "autoreplies"
   | "integrations"
   | "imports"
-  | "storage";
+  | "storage"
+  | "calendar";
 
 type ModalMailboxSettingsProps = {
   isOpen: boolean;
@@ -154,6 +157,9 @@ export const ModalMailboxSettings = ({
   // (and the integrations feature flag). Single source of truth: it drives both
   // the rendered `tabs` below and the active-tab synchronisation on mailbox
   // switch, so the two can never drift apart.
+  const { data: calendarList, isPending: isCalendarPending } = useMailboxCalendars(settingsMailbox?.id);
+  const hasCalendarTab = calendarList?.data.configured === true;
+
   const availableTabIds = useMemo<SettingsTabId[]>(() => {
     if (!settingsMailbox) {
       return [];
@@ -166,6 +172,9 @@ export const ModalMailboxSettings = ({
     }
     if (manage_message_templates) {
       ids.push("message-templates", "autoreplies", "signatures");
+    }
+    if (hasCalendarTab) {
+      ids.push("calendar");
     }
     // Imports are gated by their own ability (is_admin && FEATURE_IMPORT_MESSAGES),
     // shown before Integrations.
@@ -183,7 +192,7 @@ export const ModalMailboxSettings = ({
       ids.push("storage");
     }
     return ids;
-  }, [settingsMailbox, isIntegrationsEnabled]);
+  }, [settingsMailbox, isIntegrationsEnabled, hasCalendarTab]);
 
   // When the user drops their own admin rights from inside the modal (e.g. they
   // demote or remove their own admin access), the mailbox leaves the eligible
@@ -202,10 +211,14 @@ export const ModalMailboxSettings = ({
     if (activeTab === "") {
       return;
     }
+    // The Calendar tab only shows once the calendars have loaded; wait for that.
+    if (activeTab === "calendar" && isCalendarPending) {
+      return;
+    }
     if (!availableTabIds.includes(activeTab)) {
       setActiveTab(availableTabIds[0] ?? "");
     }
-  }, [activeTab, availableTabIds]);
+  }, [activeTab, availableTabIds, isCalendarPending]);
 
   if (!settingsMailbox) {
     return null;
@@ -306,6 +319,21 @@ export const ModalMailboxSettings = ({
             }</p>,
             content: (
               <MailboxSettingsSignaturesTab
+                key={settingsMailbox.id}
+                mailbox={settingsMailbox}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(availableTabIds.includes("calendar")
+      ? [
+          {
+            id: "calendar",
+            label: t("Calendar"),
+            title: t("Calendar"),
+            content: (
+              <MailboxSettingsCalendarTab
                 key={settingsMailbox.id}
                 mailbox={settingsMailbox}
               />

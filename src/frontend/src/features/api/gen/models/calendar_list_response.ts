@@ -8,7 +8,15 @@
 import type { CalendarListResponseCalendarsItem } from "./calendar_list_response_calendars_item";
 
 export type CalendarListResponse = {
+  /** Every calendar, with booleans ``writable`` and ``linked`` (linked to this mailbox). */
   calendars: CalendarListResponseCalendarsItem[];
+  /**
+   * Calendar new events go to by default.
+   * @nullable
+   */
+  default_calendar_id?: string | null;
+  /** Calendars checked for conflicts by default. */
+  default_conflict_calendar_ids?: string[];
   /**
    * Public URL of the calendar web UI, if configured.
    * @nullable
