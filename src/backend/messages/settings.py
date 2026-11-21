@@ -1470,6 +1470,16 @@ class Base(Configuration):
         300, environ_name="ENTITLEMENTS_CACHE_TIMEOUT", environ_prefix=None
     )
 
+    # Sender trust (inbound spam floor for known correspondents)
+    SENDER_TRUST_BACKEND = values.Value(
+        "core.mda.sender_trust.backends.local.LocalSenderTrustBackend",
+        environ_name="SENDER_TRUST_BACKEND",
+        environ_prefix=None,
+    )
+    SENDER_TRUST_BACKEND_PARAMETERS = JSONValue(
+        {}, environ_name="SENDER_TRUST_BACKEND_PARAMETERS", environ_prefix=None
+    )
+
     # Feature flags
     FEATURE_AI_SUMMARY = values.BooleanValue(
         default=False, environ_name="FEATURE_AI_SUMMARY", environ_prefix=None
