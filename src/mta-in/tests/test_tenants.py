@@ -26,9 +26,9 @@ from tests.harness import ScriptedMDA, connected, listening, records
 class TenantMDA(ScriptedMDA):
     """A scripted MDA built by the router, as an ``MDAClient`` would be."""
 
-    def __init__(self, *, base_url, secret):
+    def __init__(self, *, base_url, secret, tenant):
         super().__init__()
-        self.base_url, self.secret = base_url, secret
+        self.base_url, self.secret, self.tenant = base_url, secret, tenant
         self.closed = False
         self.breaker = False
 
@@ -249,6 +249,7 @@ def test_with_a_tenants_file_recipients_are_routed(monkeypatch, tenants_file):
     assert isinstance(route.mda, MDAClient)
     assert route.mda.base_url == "http://backend.b.svc:8000/api/v1.0/"
     assert route.mda.secret == _tenant("b")["secret"]
+    assert route.mda.tenant == "b"
 
 
 @pytest.mark.asyncio

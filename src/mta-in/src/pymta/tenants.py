@@ -176,7 +176,9 @@ class TenantRouter:
             else:
                 clients[name] = (
                     key,
-                    self._client_factory(base_url=config.base_url, secret=config.secret),
+                    self._client_factory(
+                        base_url=config.base_url, secret=config.secret, tenant=name
+                    ),
                 )
         for name, (key, client) in self._clients.items():
             if name not in clients or clients[name][0] != key:
