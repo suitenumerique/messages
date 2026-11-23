@@ -38,13 +38,16 @@ _HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?$", re.IGNOR
 # Could be set in settings.
 MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024        # 5 MB per file
 
-# Attachment handling helpers to compute filename and mime-type from incoming infos.
-#
-# resolve_mime_type("photo.jpg", "image/png")   # 'image/png'  (given type wins)
-# resolve_mime_type("photo.jpg", None)          # 'image/jpeg' (from extension)
-# resolve_mime_type("photo", None)              # 'application/octet-stream'
-# resolve_mime_type(None, "")                   # 'application/octet-stream'
+
 def resolve_mime_type(filename: str | None, mime_type: str | None) -> str:
+    """Recompute mime-type from existing optional filename and existing optional mime-type.
+
+    resolve_mime_type("photo.jpg", "image/png")   # 'image/png'  (given type wins)
+    resolve_mime_type("photo.jpg", None)          # 'image/jpeg' (from extension)
+    resolve_mime_type("photo", None)              # 'application/octet-stream'
+    resolve_mime_type(None, "")                   # 'application/octet-stream'
+    """
+
     if mime_type:
         return mime_type
     if filename:
@@ -53,16 +56,19 @@ def resolve_mime_type(filename: str | None, mime_type: str | None) -> str:
             return guessed
     return "application/octet-stream"
 
-# resolve_attachment(None, None)                    # ('3f2b8c…a6b.bin', 'application/octet-stream')
-# resolve_attachment("report", "application/pdf")   # ('report.pdf', 'application/pdf')
-# resolve_attachment("photo.jpg", None)             # ('photo.jpg', 'image/jpeg')
 def resolve_attachment(filename: str | None, mime_type: str | None) -> tuple[str, str]:
+    """Recompute filename and mime-type from existing optional filename and existing optional mime-type.
+
+    resolve_attachment(None, None)                    # ('3f2b8c…a6b.bin', 'application/octet-stream')
+    resolve_attachment("report", "application/pdf")   # ('report.pdf', 'application/pdf')
+    resolve_attachment("photo.jpg", None)             # ('photo.jpg', 'image/jpeg')
+    """
+
     mime = resolve_mime_type(filename, mime_type)
     name = Path((filename or "").replace("\\", "/")).name or uuid.uuid4().hex
     if not Path(name).suffix:
         name += mimetypes.guess_extension(mime) or ".bin"
     return name, mime
-# [END] Attachment handling helpers
 
 def _is_plausible_hostname(hostname: str) -> bool:
     """True when a Referer host is safe to render as the ticket source."""
