@@ -51,7 +51,7 @@ def resolve_mime_type(filename: str | None, mime_type: str | None) -> str:
     if mime_type:
         return mime_type
     if filename:
-        guessed, _ = mimetypes.guess_type(filename)
+        guessed, _ = mimetypes.guess_file_type(filename)
         if guessed:
             return guessed
     return "application/octet-stream"
