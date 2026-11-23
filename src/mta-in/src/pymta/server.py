@@ -18,6 +18,8 @@ import signal
 import ssl
 import time
 
+from prometheus_client import REGISTRY
+
 from . import logfmt, metrics, runtime, settings
 from .controller import Listener, publish_certificate_expiry, served_key_types
 from .handler import InboundHandler
@@ -246,6 +248,8 @@ async def _serve() -> None:
     _check_proxy_trust_config()
     _check_legacy_names()
     router = build_router()
+    tenant_breakers = metrics.TenantBreakers(router)
+    REGISTRY.register(tenant_breakers)
     try:
         await router.start()
         # Computed at scrape time: the breaker's cooldown can end with no call
@@ -319,6 +323,7 @@ async def _serve() -> None:
         finally:
             await _drain_and_close(server, ip_gate)
     finally:
+        REGISTRY.unregister(tenant_breakers)
         await router.close()
 
 

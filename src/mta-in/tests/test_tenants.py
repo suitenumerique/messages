@@ -15,7 +15,7 @@ import httpx
 import jwt
 import pytest
 
-from pymta import settings
+from pymta import metrics, settings
 from pymta.handler import InboundHandler
 from pymta.mda_async import MDAClient
 from pymta.tenants import SingleTenant, TenantRouter, build_router, domain_key
@@ -222,6 +222,26 @@ async def test_the_breaker_gauge_reads_open_while_any_tenant_is_shed(tenants_fil
     assert router.breaker_is_open() is True
 
 
+def _tenant_breakers(router):
+    (gauge,) = metrics.TenantBreakers(router).collect()
+    return {sample.labels["tenant"]: sample.value for sample in gauge.samples}
+
+
+def test_each_tenant_has_its_own_breaker_gauge(tenants_file):
+    router = _router(tenants_file)
+    router.route("x@b.example").mda.breaker = True
+    assert _tenant_breakers(router) == {"a": 0, "b": 1}
+
+
+def test_a_tenant_removed_from_the_file_leaves_the_breaker_gauge(tenants_file):
+    clock = Clock()
+    router = _router(tenants_file, clock)
+    _write(tenants_file, {"a": _tenant("a", "a.example")})
+    clock.now = 10
+    router.route("x@a.example")
+    assert _tenant_breakers(router) == {"a": 0}
+
+
 # ---------------------------------------------------------------------------
 # Which router the settings ask for
 # ---------------------------------------------------------------------------
@@ -237,6 +257,7 @@ async def test_without_a_tenants_file_everything_goes_to_the_one_mda(monkeypatch
     assert route.mda.base_url == settings.MDA_API_BASE_URL.rstrip("/") + "/"
     await router.start()
     assert router.breaker_is_open() is False
+    assert _tenant_breakers(router) == {}
     await router.close()
 
 

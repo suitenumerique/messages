@@ -121,6 +121,9 @@ class SingleTenant:
     def breaker_is_open(self) -> bool:
         return self._route.mda.breaker_is_open()
 
+    def clients(self) -> list[tuple[str, MDAClient]]:
+        return []
+
     async def start(self) -> None:
         await self._route.mda.start()
 
@@ -224,6 +227,9 @@ class TenantRouter:
     def breaker_is_open(self) -> bool:
         """Whether any tenant's MDA is being shed, for the metrics gauge."""
         return any(client.breaker_is_open() for _, client in self._clients.values())
+
+    def clients(self) -> list[tuple[str, MDAClient]]:
+        return [(name, client) for name, (_, client) in self._clients.items()]
 
     async def start(self) -> None:
         """Nothing to open: each tenant's client connects on its first call."""
