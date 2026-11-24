@@ -769,7 +769,9 @@ export const CalendarInvite = ({
         () => collapseRecurringEvents(calendar?.events ?? []),
         [calendar],
     );
-    const isCancellation = calendar?.method === "CANCEL";
+    const method = calendar?.method?.toUpperCase();
+    const isCancellation = method === "CANCEL";
+    const isAttendeeAnswer = method === "REPLY" || method === "COUNTER";
 
     // Conflict detection for the first event
     const firstEvent = events[0];
@@ -1115,10 +1117,8 @@ export const CalendarInvite = ({
     // Footer reserves a stable height: loading → placeholder; error →
     // "Calendar service unavailable"; ready → dropdown + RSVP + add.
     const renderFooter = () => {
-        if (isCancellation) {
-            // For cancellations the cancellation banner is the primary signal;
-            // we still reserve the footer slot so layout is stable but show
-            // nothing actionable.
+        if (isCancellation || isAttendeeAnswer) {
+            // The card has no action for these messages.
             return null;
         }
         if (!isCalDAVConfigured) {

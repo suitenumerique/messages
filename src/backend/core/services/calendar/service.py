@@ -10,6 +10,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from enum import StrEnum
 from urllib.parse import quote, unquote, urljoin, urlparse
 
 from django.conf import settings as django_settings
@@ -44,6 +45,19 @@ LASUITE_NS = "http://lasuite.numerique.gouv.fr/ns/"
 # anything else is treated as no color (defensive against attacker-controlled
 # values flowing into React inline styles).
 _HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+class ITIPMethod(StrEnum):
+    """The iTIP methods of a calendar message (RFC 5546)."""
+
+    PUBLISH = "PUBLISH"
+    REQUEST = "REQUEST"
+    REPLY = "REPLY"
+    ADD = "ADD"
+    CANCEL = "CANCEL"
+    REFRESH = "REFRESH"
+    COUNTER = "COUNTER"
+    DECLINECOUNTER = "DECLINECOUNTER"
 
 
 def _attendee_key(value) -> str:
@@ -564,8 +578,17 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         return None
 
     def add_event(self, ics_data, calendar_id=None):
-        """Store an event on the selected calendar (or the default one)."""
+        """Store an event on the selected calendar (or the default one).
+
+        Raises CalDAVError for an iTIP REPLY or COUNTER. These hold an answer
+        from an attendee, not a full event.
+        """
         cal = ICalendar.from_ical(ics_data)
+        method = str(cal.get("METHOD") or "").upper()
+        if method in (ITIPMethod.REPLY, ITIPMethod.COUNTER):
+            raise CalDAVError(
+                "An answer to an invitation cannot be added to a calendar."
+            )
         cal = rebuild_for_storage(cal)
         # Suppress server-side iTIP REQUEST fan-out. sabre/dav's Schedule
         # plugin (used by suitenumerique/calendars) auto-dispatches one
