@@ -423,3 +423,30 @@ async def test_accepted_recipient_still_delivered_on_removed_tenant(tenants_file
     assert [d["original_recipients"] for d in old_b.delivered] == [["one@b.example"]]
     a = router.route("x@a.example").mda
     assert [d["original_recipients"] for d in a.delivered] == [["two@a.example"]]
+
+
+@pytest.mark.asyncio
+async def test_each_recipient_goes_through_the_client_that_accepted_it(tenants_file):
+    clock = Clock()
+    router = _router(tenants_file, clock)
+    old_b = router.route("x@b.example").mda
+    async with listening(handler=InboundHandler(router=router)) as port, connected(port) as client:
+        await client.cmd(b"EHLO mx.sender.example")
+        await client.cmd(b"MAIL FROM:<sender@example.org>")
+        assert (await client.cmd(b"RCPT TO:<one@b.example>")).startswith(b"250")
+        # b's secret rotates: the next RCPT reloads the file and gets b a new client.
+        _write(
+            tenants_file,
+            {
+                "a": _tenant("a", "a.example"),
+                "b": _tenant("b", "b.example", secret="rotated-" + "y" * 32),
+            },
+        )
+        clock.now = 10
+        assert (await client.cmd(b"RCPT TO:<two@b.example>")).startswith(b"250")
+        new_b = router.route("x@b.example").mda
+        assert new_b is not old_b
+        reply = await client.data()
+    assert reply == b"250 2.0.0 Message accepted for delivery\r\n"
+    assert [d["original_recipients"] for d in old_b.delivered] == [["one@b.example"]]
+    assert [d["original_recipients"] for d in new_b.delivered] == [["two@b.example"]]

@@ -429,11 +429,14 @@ class InboundHandler:
 
         # One delivery per MDA, in the order its first recipient was given,
         # each naming only its own recipients: one Messages instance does not
-        # learn who else, on another, received the message.
-        groups: dict[str, tuple[MDAClient, list[str]]] = {}
+        # learn of recipients on another that only the envelope names (Bcc).
+        # Keyed by client, not tenant name: a reload between two RCPTs can
+        # give one tenant a new client, and each recipient goes through the
+        # one that accepted it.
+        groups: dict[MDAClient, tuple[str, list[str]]] = {}
         for rcpt in envelope.rcpt_tos:
             route = envelope.rcpt_routes[rcpt]
-            groups.setdefault(route.tenant, (route.mda, []))[1].append(rcpt)
+            groups.setdefault(route.mda, (route.tenant, []))[1].append(rcpt)
 
         try:
             # Before building the coroutines: a budget already spent raises
@@ -455,7 +458,7 @@ class InboundHandler:
                             session=connection.session_id,
                             transport=_transport(session, envelope),
                         )
-                        for mda, rcpts in groups.values()
+                        for mda, (_, rcpts) in groups.items()
                     )
                 ),
                 timeout=budget,
@@ -477,7 +480,7 @@ class InboundHandler:
 
         failed = [
             (tenant, result)
-            for tenant, result in zip(groups, results, strict=True)
+            for (tenant, _), result in zip(groups.values(), results, strict=True)
             if not (result.ok and result.payload.get("status") == "ok")
         ]
         if not failed:
