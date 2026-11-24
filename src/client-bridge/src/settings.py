@@ -4,13 +4,15 @@ import os
 
 
 def _env_bool(name: str, default: bool = True) -> bool:
-    """Read a boolean from an environment variable."""
+    """Read a boolean from an environment variable, failing on unknown values."""
     val = os.environ.get(name, "").strip().lower()
+    if not val:
+        return default
     if val in ("0", "false", "no"):
         return False
     if val in ("1", "true", "yes"):
         return True
-    return default
+    raise ValueError(f"Environment variable {name} must be a boolean, got {val!r}")
 
 
 def _env_int(name: str, default: int) -> int:

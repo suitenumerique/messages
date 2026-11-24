@@ -267,21 +267,16 @@
         flex-shrink: 0;
     }
 
+    // Takes the remaining width and may shrink, so a long value scrolls
+    // inside its input instead of overflowing the modal.
     dd {
+        flex: 1;
+        min-width: 0;
         margin: 0;
         font-size: var(--c--globals--font--sizes--sm);
         display: flex;
         align-items: center;
         gap: var(--c--globals--spacings--2xs);
-    }
-
-    code {
-        font-family: "Fira Code", Consolas, monospace;
-        font-size: var(--c--globals--font--sizes--xs);
-        background: var(--c--contextuals--background--surface--primary);
-        padding: var(--c--globals--spacings--4xs) var(--c--globals--spacings--2xs);
-        border-radius: 3px;
-        border: 1px solid var(--c--contextuals--border--semantic--neutral--default);
     }
 }
 

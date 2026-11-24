@@ -67,11 +67,13 @@ class Command(BaseCommand):
                 self.style.WARNING("  Shared mailbox not found, skipping")
             )
 
-        # Create IMAP test messages on the first regular user's mailbox (chromium)
-        first_mailbox = models.Mailbox.objects.get(
-            local_part="user.e2e.chromium", domain=domain
-        )
-        self._create_imap_test_messages(first_mailbox, domain)
+        # IMAP test messages for each browser's mailbox (one per Playwright project)
+        for browser in BROWSERS:
+            mailbox = models.Mailbox.objects.filter(
+                local_part=f"user.e2e.{browser}", domain=domain
+            ).first()
+            if mailbox:
+                self._create_imap_test_messages(mailbox, domain)
 
     def _create_clientbridge_channel(self, mailbox):
         """Create a client-bridge channel with a known password for e2e testing."""
@@ -89,7 +91,9 @@ class Command(BaseCommand):
         password_hash = hashlib.sha256(
             CLIENTBRIDGE_APP_PASSWORD.encode("utf-8")
         ).hexdigest()
-        _channel, created = models.Channel.objects.get_or_create(
+        # update_or_create: a channel left by an earlier run gets the known
+        # credential and scopes back.
+        _channel, created = models.Channel.objects.update_or_create(
             mailbox=mailbox,
             type=ChannelTypes.CLIENT_BRIDGE,
             defaults={
@@ -107,9 +111,7 @@ class Command(BaseCommand):
             )
         else:
             self.stdout.write(
-                self.style.SUCCESS(
-                    f"  Client-bridge channel already exists for {mailbox}"
-                )
+                self.style.SUCCESS(f"  Reset client-bridge channel for {mailbox}")
             )
 
     @staticmethod
@@ -131,6 +133,12 @@ class Command(BaseCommand):
             mailbox=mailbox,
             defaults={"name": "IMAP Test Sender"},
         )
+
+        # Recreate rather than add: a re-run must not duplicate the threads.
+        models.Thread.objects.filter(
+            subject__in=["IMAP unread test", "IMAP read test"],
+            accesses__mailbox=mailbox,
+        ).delete()
 
         # Thread 1: an unread message
         now = timezone.now()

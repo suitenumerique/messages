@@ -22,6 +22,7 @@ from django.utils.dateparse import parse_datetime
 
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from rest_framework.settings import api_settings
 
 from core import models
 from core.enums import ChannelScopeLevel, ChannelTypes
@@ -177,3 +178,9 @@ class AppPasswordAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request):
         return "X-App-Password"
+
+
+def with_app_password():
+    """DRF's default authentication classes plus app passwords, for the views
+    the client bridge calls (each also declares its ``app_password_scopes``)."""
+    return [*api_settings.DEFAULT_AUTHENTICATION_CLASSES, AppPasswordAuthentication]

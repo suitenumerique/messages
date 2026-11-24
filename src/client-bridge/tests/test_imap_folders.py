@@ -20,8 +20,8 @@ def test_list_all_folders(imap_client):
             else:
                 folder_names.append(decoded.split()[-1])
 
-    # Check that our virtual folders are present
-    assert any("INBOX" in f for f in folder_names), f"INBOX not found in {folder_names}"
+    expected = {"INBOX", "Sent", "Drafts", "Trash", "Archive", "Spam", "Starred"}
+    assert set(folder_names) == expected, folder_names
 
 
 def test_list_with_wildcard(imap_client):

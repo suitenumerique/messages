@@ -101,6 +101,12 @@ services:
       - ../../deploy/env/client-bridge.defaults
       - ../../deploy/env/client-bridge.e2e
     ports: !reset []
+    # The runner waits for this, so probe faster than the image default.
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     depends_on: !override
       - backend
 
@@ -182,7 +188,7 @@ services:
       mta-in:
         condition: service_started
       client-bridge:
-        condition: service_started
+        condition: service_healthy
       worker:
         condition: service_started
     command: npm run test

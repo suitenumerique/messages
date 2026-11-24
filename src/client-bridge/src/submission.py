@@ -15,6 +15,7 @@ from .api.client import (
     MessagesAPIClient,
     SubmissionRejected,
     credential_headers,
+    log_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,16 +49,18 @@ class SubmissionAuthenticator:
                     headers=credential_headers(username, password),
                 )
         except httpx.HTTPError:
-            logger.exception("SMTP auth HTTP error for %s", username)
+            logger.exception("SMTP auth HTTP error for login %s", log_id(username))
             return AuthResult(success=False, handled=False)
 
         if resp.status_code != 200:
-            logger.warning("SMTP auth failed for %s", username)
+            logger.warning("SMTP auth failed for login %s", log_id(username))
             return AuthResult(success=False, handled=False)
 
         channel = resp.json()
         if SCOPE_MESSAGES_SEND not in (channel.get("scopes") or []):
-            logger.warning("SMTP auth rejected for %s: no send access", username)
+            logger.warning(
+                "SMTP auth rejected for channel %s: no send access", channel.get("channel_id")
+            )
             return AuthResult(success=False, handled=False)
 
         logger.info("SMTP auth success for channel_id=%s", channel.get("channel_id"))

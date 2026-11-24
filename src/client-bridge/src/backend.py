@@ -21,7 +21,7 @@ from pymap.user import UserMetadata
 from pysasl.creds.plain import PlainCredentials
 from pysasl.creds.server import ServerCredentials
 
-from .api.client import SCOPE_MESSAGES_READ, SCOPE_THREADS_WRITE, MessagesAPIClient
+from .api.client import SCOPE_MESSAGES_READ, SCOPE_THREADS_WRITE, MessagesAPIClient, log_id
 from .mailbox import MailboxSet
 from .session import Session
 
@@ -131,15 +131,17 @@ class Login(LoginInterface):
         # Authenticate via the Messages API
         channel_data = await self.api_client.authenticate_channel(authcid, password)
         if channel_data is None:
+            logger.warning("IMAP auth failed for login %s", log_id(authcid))
             raise InvalidAuth()
 
         # Reject app passwords that cannot read mail (e.g. sender only)
+        channel_id = channel_data.get("channel_id")
         scopes = channel_data.get("scopes") or []
         if SCOPE_MESSAGES_READ not in scopes:
-            logger.warning("IMAP auth rejected for %s: no read access", authcid)
+            logger.warning("IMAP auth rejected for channel %s: no read access", channel_id)
             raise InvalidAuth()
 
-        logger.info("Authenticated channel %s (scopes=%s)", authcid, scopes)
+        logger.info("IMAP auth success for channel %s (scopes=%s)", channel_id, scopes)
         return Identity(
             name=authcid,
             login=self,

@@ -12211,6 +12211,17 @@
                     "auth",
                     "p256dh"
                 ]
+            },
+            "AppPasswordScopeEnum": {
+                "type": "string",
+                "enum": [
+                    "messages:read",
+                    "messages:read.body",
+                    "messages:send",
+                    "threads:read",
+                    "threads:write"
+                ],
+                "description": "A scope an app password (client-bridge channel) may hold."
             }
         },
         "securitySchemes": {

@@ -57,7 +57,8 @@ def test_fetch_specific_headers(imap_client):
     status, data = imap_client.fetch("1", "(BODY[HEADER.FIELDS (SUBJECT FROM TO)])")
     assert status == "OK"
     raw = data[0][1]
-    assert b"Subject:" in raw or b"From:" in raw
+    for header in (b"Subject:", b"From:", b"To:"):
+        assert header in raw, f"{header!r} missing from {raw!r}"
 
 
 def test_fetch_message_text(imap_client):

@@ -26,7 +26,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "imapflow": "1.0.175"
+    "imapflow": "2.11.0"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

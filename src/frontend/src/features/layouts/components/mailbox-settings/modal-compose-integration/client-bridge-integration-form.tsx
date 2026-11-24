@@ -1,5 +1,4 @@
-import { Icon } from "@/features/ui/components/icon";
-import { Button, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
+import { Button } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,6 +6,7 @@ import * as z from "zod";
 import { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+    AppPasswordScopeEnum,
     Channel,
     ChannelCreateResponse,
     Mailbox,
@@ -22,6 +22,7 @@ import {
 } from "@/features/forms/components/react-hook-form";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { Banner } from "@/features/ui/components/banner";
+import { CopyableInput } from "@/features/ui/components/copyable-input";
 import { handle } from "@/features/utils/errors";
 import { useConfig } from "@/features/providers/config";
 
@@ -33,20 +34,28 @@ type ClientBridgeIntegrationFormProps = {
 };
 
 const formSchema = (t: (key: string) => string) => z.object({
-    name: z.string().min(1, { message: t("Name is required.") }),
+    name: z.string().min(1, { error: t("Name is required.") }),
     role: z.enum(["reader", "editor", "sender", "sender_only"]),
 });
 
 type FormFields = z.infer<ReturnType<typeof formSchema>>;
 type Role = FormFields["role"];
 
-// Roles are presets of app password scopes (backend APP_PASSWORD_SCOPES).
-const READER_SCOPES = ["threads:read", "messages:read", "messages:read.body"];
-const ROLE_SCOPES: Record<Role, string[]> = {
+// Roles are presets of the scopes an app password may hold.
+const READER_SCOPES: AppPasswordScopeEnum[] = [
+    AppPasswordScopeEnum["threads:read"],
+    AppPasswordScopeEnum["messages:read"],
+    AppPasswordScopeEnum["messages:readbody"],
+];
+const ROLE_SCOPES: Record<Role, AppPasswordScopeEnum[]> = {
     reader: READER_SCOPES,
-    editor: [...READER_SCOPES, "threads:write"],
-    sender: [...READER_SCOPES, "threads:write", "messages:send"],
-    sender_only: ["messages:send"],
+    editor: [...READER_SCOPES, AppPasswordScopeEnum["threads:write"]],
+    sender: [
+        ...READER_SCOPES,
+        AppPasswordScopeEnum["threads:write"],
+        AppPasswordScopeEnum["messages:send"],
+    ],
+    sender_only: [AppPasswordScopeEnum["messages:send"]],
 };
 
 // Scopes set outside this form match no preset: show the narrowest one, so
@@ -282,34 +291,6 @@ export const ClientBridgeIntegrationForm = ({
     );
 };
 
-const CopyButton = ({ value }: { value: string }) => {
-    const { t } = useTranslation();
-    return (
-        <Button
-            type="button"
-            variant="tertiary"
-            size="small"
-            icon={<Icon name="content_copy" type={IconType.OUTLINED} size={IconSize.SMALL} />}
-            onClick={() => {
-                navigator.clipboard.writeText(value).then(() => {
-                    addToast(
-                        <ToasterItem type="info">
-                            <span>{t("Copied to clipboard")}</span>
-                        </ToasterItem>
-                    );
-                }).catch(() => {
-                    addToast(
-                        <ToasterItem type="error">
-                            <span>{t("Failed to copy to clipboard")}</span>
-                        </ToasterItem>
-                    );
-                });
-            }}
-            aria-label={t("Copy")}
-        />
-    );
-};
-
 type ConnectionDetailsProps = {
     mailboxEmail: string;
     generatedPassword?: string;
@@ -317,17 +298,43 @@ type ConnectionDetailsProps = {
     isRotating?: boolean;
 };
 
+type ServerProps = {
+    title: string;
+    host: string;
+    port: number;
+    security: string;
+};
+
+const ServerDetails = ({ title, host, port, security }: ServerProps) => {
+    const { t } = useTranslation();
+    return (
+        <>
+            <h4>{title}</h4>
+            <div className="client-bridge-form__details">
+                <dl className="client-bridge-form__detail-list">
+                    <div className="client-bridge-form__detail-item">
+                        <dt>{t("Server")}</dt>
+                        <dd><CopyableInput value={host} aria-label={`${title} ${t("Server")}`} /></dd>
+                    </div>
+                    <div className="client-bridge-form__detail-item">
+                        <dt>{t("Port")}</dt>
+                        <dd>{port}</dd>
+                    </div>
+                    <div className="client-bridge-form__detail-item">
+                        <dt>{t("Security")}</dt>
+                        <dd>{security}</dd>
+                    </div>
+                </dl>
+            </div>
+        </>
+    );
+};
+
 const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, isRotating }: ConnectionDetailsProps) => {
     const { t } = useTranslation();
     const config = useConfig();
+    // Only the deployment knows where the bridge listens: no guess from the web app's host.
     const bridgeConfig = config.CLIENTBRIDGE_PUBLIC_CONFIG;
-
-    const imapHost = bridgeConfig?.imap_host ?? window.location.hostname;
-    const imapPort = String(bridgeConfig?.imap_port ?? 993);
-    const imapSecurity = bridgeConfig?.imap_security ?? "SSL/TLS";
-    const smtpHost = bridgeConfig?.smtp_host ?? window.location.hostname;
-    const smtpPort = String(bridgeConfig?.smtp_port ?? 587);
-    const smtpSecurity = bridgeConfig?.smtp_security ?? "STARTTLS";
 
     return (
         <div className="widget-integration-form__section">
@@ -339,18 +346,12 @@ const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, 
                 <dl className="client-bridge-form__detail-list">
                     <div className="client-bridge-form__detail-item">
                         <dt>{t("Username")}</dt>
-                        <dd>
-                            <code>{mailboxEmail}</code>
-                            <CopyButton value={mailboxEmail} />
-                        </dd>
+                        <dd><CopyableInput value={mailboxEmail} aria-label={t("Username")} /></dd>
                     </div>
                     {generatedPassword && (
                         <div className="client-bridge-form__detail-item">
                             <dt>{t("Password")}</dt>
-                            <dd>
-                                <code>{generatedPassword}</code>
-                                <CopyButton value={generatedPassword} />
-                            </dd>
+                            <dd><CopyableInput value={generatedPassword} aria-label={t("Password")} /></dd>
                         </div>
                     )}
                     {!generatedPassword && onRotatePassword && (
@@ -372,46 +373,26 @@ const ConnectionDetails = ({ mailboxEmail, generatedPassword, onRotatePassword, 
                     )}
                 </dl>
             </div>
-            <h4>{t("Incoming mail (IMAP)")}</h4>
-            <div className="client-bridge-form__details">
-                <dl className="client-bridge-form__detail-list">
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Server")}</dt>
-                        <dd>
-                            <code>{imapHost}</code>
-                            <CopyButton value={imapHost} />
-                        </dd>
-                    </div>
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Port")}</dt>
-                        <dd><code>{imapPort}</code></dd>
-                    </div>
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Security")}</dt>
-                        <dd>{imapSecurity}</dd>
-                    </div>
-                </dl>
-            </div>
-            <h4>{t("Outgoing mail (SMTP)")}</h4>
-            <div className="client-bridge-form__details">
-                <dl className="client-bridge-form__detail-list">
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Server")}</dt>
-                        <dd>
-                            <code>{smtpHost}</code>
-                            <CopyButton value={smtpHost} />
-                        </dd>
-                    </div>
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Port")}</dt>
-                        <dd><code>{smtpPort}</code></dd>
-                    </div>
-                    <div className="client-bridge-form__detail-item">
-                        <dt>{t("Security")}</dt>
-                        <dd>{smtpSecurity}</dd>
-                    </div>
-                </dl>
-            </div>
+            {bridgeConfig ? (
+                <>
+                    <ServerDetails
+                        title={t("Incoming mail (IMAP)")}
+                        host={bridgeConfig.imap_host ?? ""}
+                        port={bridgeConfig.imap_port ?? 0}
+                        security={bridgeConfig.imap_security ?? ""}
+                    />
+                    <ServerDetails
+                        title={t("Outgoing mail (SMTP)")}
+                        host={bridgeConfig.smtp_host ?? ""}
+                        port={bridgeConfig.smtp_port ?? 0}
+                        security={bridgeConfig.smtp_security ?? ""}
+                    />
+                </>
+            ) : (
+                <Banner type="info">
+                    {t("Ask your administrator for the IMAP and SMTP server settings.")}
+                </Banner>
+            )}
         </div>
     );
 };

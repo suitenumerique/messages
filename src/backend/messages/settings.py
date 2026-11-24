@@ -1053,7 +1053,6 @@ class Base(Configuration):
         "DEFAULT_AUTHENTICATION_CLASSES": (
             "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
             "rest_framework.authentication.SessionAuthentication",
-            "core.api.authentication.AppPasswordAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
             "rest_framework.parsers.JSONParser",
@@ -1136,6 +1135,10 @@ class Base(Configuration):
             environ_name="SPECTACULAR_SETTINGS_ENABLE_DJANGO_DEPLOY_CHECK",
         ),
         "COMPONENT_SPLIT_REQUEST": True,
+        "POSTPROCESSING_HOOKS": [
+            "drf_spectacular.hooks.postprocess_schema_enums",
+            "core.api.schema.add_app_password_scopes",
+        ],
         # OTHER SETTINGS
         "SWAGGER_UI_DIST": "SIDECAR",  # shorthand to use the sidecar instead
         "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
@@ -1825,6 +1828,46 @@ class Base(Configuration):
                     "PUSH_VAPID_SUBJECT must be a 'mailto:' or 'https:' URI "
                     f"(RFC 8292); got {subject!r}."
                 )
+
+        if cls.FEATURE_CLIENTBRIDGE:
+            cls._check_clientbridge_public_config()
+
+    # Keys of CLIENTBRIDGE_PUBLIC_CONFIG and their types.
+    CLIENTBRIDGE_PUBLIC_CONFIG_KEYS = {
+        "imap_host": str,
+        "imap_port": int,
+        "imap_security": str,
+        "smtp_host": str,
+        "smtp_port": int,
+        "smtp_security": str,
+    }
+
+    @classmethod
+    def _check_clientbridge_public_config(cls):
+        """Fail on a malformed CLIENTBRIDGE_PUBLIC_CONFIG, warn when it is unset."""
+        config = cls.CLIENTBRIDGE_PUBLIC_CONFIG
+        if not config:
+            logger.warning(
+                "FEATURE_CLIENTBRIDGE is enabled but CLIENTBRIDGE_PUBLIC_CONFIG is "
+                "empty: users won't be shown the IMAP/SMTP server settings."
+            )
+            return
+        expected = cls.CLIENTBRIDGE_PUBLIC_CONFIG_KEYS
+        unknown = sorted(set(config) - set(expected))
+        missing = sorted(set(expected) - set(config))
+        wrong = sorted(
+            key
+            for key, kind in expected.items()
+            if key in config
+            and not (
+                isinstance(config[key], kind) and not isinstance(config[key], bool)
+            )
+        )
+        if unknown or missing or wrong:
+            raise ValueError(
+                "Invalid CLIENTBRIDGE_PUBLIC_CONFIG: "
+                f"unknown keys {unknown}, missing keys {missing}, wrong types {wrong}."
+            )
 
 
 class Build(Base):

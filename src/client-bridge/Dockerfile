@@ -59,3 +59,6 @@ RUN chmod -R a+rX /app/src
 
 ARG DOCKER_USER=65532
 USER ${DOCKER_USER}
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+    CMD ["python", "-m", "src.healthcheck"]

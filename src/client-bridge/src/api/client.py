@@ -5,6 +5,7 @@ password) in X-Mailbox-Email / X-App-Password: the backend checks them each
 time, so a rotated password or a paused channel takes effect at once.
 """
 
+import hashlib
 import logging
 
 import httpx
@@ -25,6 +26,11 @@ class CredentialsRevoked(Exception):
 
 class SubmissionRejected(Exception):
     """Raised when the backend refuses a submitted message for good."""
+
+
+def log_id(email: str) -> str:
+    """Short stable identifier for a login address, to keep addresses out of logs."""
+    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:12]
 
 
 def credential_headers(email: str, password: str) -> dict[str, str]:
@@ -114,13 +120,15 @@ class MessagesAPIClient:
     async def list_threads(
         self, mailbox_id: str, folder: str = "inbox", page: int = 1, page_size: int = 100
     ) -> dict:
-        """List threads for a mailbox, filtered by folder."""
+        """List threads for a mailbox, filtered by folder like the web UI does."""
         params = {
             "mailbox_id": mailbox_id,
             "page": page,
             "page_size": page_size,
         }
-        if folder == "trash":
+        if folder == "inbox":
+            params["has_active"] = "1"
+        elif folder == "trash":
             params["has_trashed"] = "1"
         elif folder == "drafts":
             params["has_draft"] = "1"
@@ -131,6 +139,7 @@ class MessagesAPIClient:
         elif folder == "sent":
             params["has_sender"] = "1"
         elif folder == "starred":
+            params["has_active"] = "1"
             params["has_starred"] = "1"
 
         resp = await self._client.get(f"{self.base_url}/threads/", params=params)

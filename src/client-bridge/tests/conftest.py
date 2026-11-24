@@ -125,19 +125,22 @@ class MockMessagesAPI:
                 return UNAUTHORIZED()
             mailbox_id = request.query_params.get("mailbox_id")
             # Determine folder from query params
-            folder = "inbox"
-            if request.query_params.get("has_trashed") == "1":
+            # Same filters as the web UI. Without any, the real API returns
+            # every thread (archived and sent-only ones too): nothing here.
+            params = request.query_params
+            folder = None
+            if params.get("has_trashed") == "1":
                 folder = "trash"
-            elif request.query_params.get("has_draft") == "1":
+            elif params.get("has_draft") == "1":
                 folder = "drafts"
-            elif request.query_params.get("is_spam") == "1":
+            elif params.get("is_spam") == "1":
                 folder = "spam"
-            elif request.query_params.get("has_archived") == "1":
+            elif params.get("has_archived") == "1":
                 folder = "archive"
-            elif request.query_params.get("has_sender") == "1":
+            elif params.get("has_sender") == "1":
                 folder = "sent"
-            elif request.query_params.get("has_starred") == "1":
-                folder = "starred"
+            elif params.get("has_active") == "1":
+                folder = "starred" if params.get("has_starred") == "1" else "inbox"
 
             key = f"{mailbox_id}:{folder}"
             threads = self.mailbox_threads.get(key, [])

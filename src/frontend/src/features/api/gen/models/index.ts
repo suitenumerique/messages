@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
+export * from "./app_password_scope_enum";
 export * from "./attachment";
 export * from "./blob_upload_create201";
 export * from "./blob_upload_create_body";

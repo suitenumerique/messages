@@ -27,6 +27,8 @@ from core.factories import (
     UserFactory,
 )
 
+from messages.settings import Base
+
 CHANNEL_URL = "/api/v1.0/client-bridge/channel/"
 SUBMIT_URL = "/api/v1.0/submit/"
 THREADS_URL = "/api/v1.0/threads/"
@@ -97,6 +99,96 @@ def raw_email(mail_from, rcpt_to="bob@external.test"):
         "\r\n"
         "Body\r\n"
     ).encode()
+
+
+# =============================================================================
+# Startup check of CLIENTBRIDGE_PUBLIC_CONFIG
+# =============================================================================
+
+VALID_PUBLIC_CONFIG = {
+    "imap_host": "imap.example.com",
+    "imap_port": 993,
+    "imap_security": "SSL/TLS",
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "smtp_security": "STARTTLS",
+}
+
+
+class TestPublicConfigCheck:
+    """Base._check_clientbridge_public_config, run at startup when the flag is on."""
+
+    def _check(self, config):
+        with patch.object(Base, "CLIENTBRIDGE_PUBLIC_CONFIG", config):
+            Base._check_clientbridge_public_config()  # pylint: disable=protected-access
+
+    def test_valid(self):
+        self._check(VALID_PUBLIC_CONFIG)
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {**VALID_PUBLIC_CONFIG, "imap_hots": "typo"},
+            {k: v for k, v in VALID_PUBLIC_CONFIG.items() if k != "smtp_port"},
+            {**VALID_PUBLIC_CONFIG, "imap_port": "993"},
+            {**VALID_PUBLIC_CONFIG, "smtp_port": True},
+        ],
+        ids=["unknown-key", "missing-key", "port-as-string", "port-as-bool"],
+    )
+    def test_malformed_rejected(self, config):
+        with pytest.raises(ValueError):
+            self._check(config)
+
+    def test_empty_warns(self, caplog):
+        self._check({})
+        assert "CLIENTBRIDGE_PUBLIC_CONFIG is empty" in caplog.text
+
+
+# =============================================================================
+# e2e seed command
+# =============================================================================
+
+
+@pytest.mark.django_db
+class TestE2EClientBridgeSeed:
+    """e2e_clientbridge must be safe to run again (Playwright runs it per project)."""
+
+    def test_rerun_resets_credentials_and_does_not_duplicate(self):
+        # pylint: disable-next=import-outside-toplevel
+        from e2e.management.commands.e2e_clientbridge import (
+            BROWSERS,
+            CLIENTBRIDGE_APP_PASSWORD,
+            Command,
+        )
+
+        domain = MailDomainFactory(name="example.local")
+        mailboxes = []
+        for local_part in [f"user.e2e.{b}" for b in BROWSERS] + ["shared.e2e"]:
+            mailbox = MailboxFactory(local_part=local_part, domain=domain)
+            mailbox.accesses.create(user=UserFactory(), role=MailboxRoleChoices.ADMIN)
+            mailboxes.append(mailbox)
+
+        Command().handle()
+        # Simulate a channel left by an older seed with other credentials
+        models.Channel.objects.filter(type=ChannelTypes.CLIENT_BRIDGE).update(
+            settings={"role": "sender"}, encrypted_settings={"password": "old"}
+        )
+        Command().handle()
+
+        expected_hash = hashlib.sha256(CLIENTBRIDGE_APP_PASSWORD.encode()).hexdigest()
+        for mailbox in mailboxes:
+            channel = models.Channel.objects.get(
+                mailbox=mailbox, type=ChannelTypes.CLIENT_BRIDGE
+            )
+            assert channel.encrypted_settings == {"password_hash": expected_hash}
+            assert set(channel.settings["scopes"]) == APP_PASSWORD_SCOPES
+        for mailbox in mailboxes[: len(BROWSERS)]:
+            subjects = sorted(
+                models.Thread.objects.filter(accesses__mailbox=mailbox).values_list(
+                    "subject", flat=True
+                )
+            )
+            assert subjects == ["IMAP read test", "IMAP unread test"]
 
 
 # =============================================================================
@@ -378,19 +470,24 @@ class TestScopes:
         assert response.status_code == status
 
     @pytest.mark.parametrize("preset", PRESETS)
-    def test_undeclared_endpoints_refused(self, mailbox, channel_user, preset):
-        """Default deny: endpoints without app_password_scopes, whatever the scopes."""
+    def test_other_endpoints_ignore_app_passwords(self, mailbox, channel_user, preset):
+        """Views that don't opt in never see the app password: not authenticated."""
         _, password = make_channel(mailbox, channel_user, scopes=PRESETS[preset])
         client = app_client(str(mailbox), password)
-        assert client.get("/api/v1.0/users/me/").status_code == 403
+        assert client.get("/api/v1.0/users/me/").status_code == 401
         assert (
-            client.get(f"/api/v1.0/mailboxes/{mailbox.id}/channels/").status_code == 403
+            client.get(f"/api/v1.0/mailboxes/{mailbox.id}/channels/").status_code == 401
         )
-        assert client.post("/api/v1.0/send/", {}, format="json").status_code == 403
+        assert client.post("/api/v1.0/send/", {}, format="json").status_code == 401
+
+    @pytest.mark.parametrize("preset", PRESETS)
+    def test_undeclared_actions_refused(self, mailbox, channel_user, preset):
+        """Default deny on opted-in views: threads-list is declared, threads-detail isn't."""
+        _, password = make_channel(mailbox, channel_user, scopes=PRESETS[preset])
         thread = ThreadFactory()
         ThreadAccessFactory(thread=thread, mailbox=mailbox)
-        # threads-list is declared, threads-detail is not
-        assert client.get(f"{THREADS_URL}{thread.id}/").status_code == 403
+        response = app_client(str(mailbox), password).get(f"{THREADS_URL}{thread.id}/")
+        assert response.status_code == 403
 
     def test_scopes_read_from_database(self, mailbox, channel_user):
         channel, password = make_channel(mailbox, channel_user, scopes=SENDER)

@@ -271,9 +271,9 @@ class MailboxData(MailboxDataInterface[Message]):
         try:
             threads = await self._fetch_threads()
             await self._ingest_threads(threads)
-        except CredentialsRevoked:
+        except CredentialsRevoked as exc:
             logger.info("Credentials revoked during message load for folder %s", self._folder)
-            raise CloseConnection()
+            raise CloseConnection() from exc
         except Exception:
             logger.exception("Failed to load messages for folder %s", self._folder)
         self._loaded = True
@@ -287,9 +287,9 @@ class MailboxData(MailboxDataInterface[Message]):
                 logger.debug("Refreshed folder %s: %d new messages", self._folder, added)
                 self._updated.set()
                 self._updated.clear()
-        except CredentialsRevoked:
+        except CredentialsRevoked as exc:
             logger.info("Credentials revoked during refresh for folder %s", self._folder)
-            raise CloseConnection()
+            raise CloseConnection() from exc
         except Exception:
             logger.exception("Failed to refresh messages for folder %s", self._folder)
 
