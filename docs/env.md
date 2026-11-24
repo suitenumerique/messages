@@ -628,6 +628,29 @@ Each gateway is all-or-nothing, and validated at boot: with `PUSH_ENABLED=True`,
 | `PUSH_PREVIEWS_ENABLED` | `True` | Show the sender and subject in notifications. The preview is encrypted for the device (never readable by Apple, Google or the browser push service) and only sent within the windows below; `False` keeps every notification generic. See [push-notifications.md](./push-notifications.md) §5.1. | Optional |
 | `PUSH_PREVIEW_MAX_IDLE_DAYS` | `14` | A native app gets previews only if it was opened with a valid session within this many days (a lost phone stops showing them). `0` disables native previews. Browsers get them only while their registering session is alive. | Optional |
 
+### Client Bridge
+
+| Variable | Default | Description | Required |
+|----------|---------|-------------|----------|
+| `FEATURE_CLIENTBRIDGE` | `False` | Enable the client bridge (IMAP/SMTP access for email clients). Also add `client-bridge` to `FEATURE_MAILBOX_ADMIN_CHANNELS` so mailbox admins can create the access. | Optional |
+| `CLIENTBRIDGE_PUBLIC_CONFIG` | `{}` | JSON object with IMAP/SMTP connection settings exposed to the frontend via `/api/v1.0/config/`. When set, the frontend displays these values in the integration setup form instead of inferring them from the browser's hostname. See [Client Bridge README](../src/client-bridge/README.md) for details. | Optional |
+
+`CLIENTBRIDGE_PUBLIC_CONFIG` accepts the following keys:
+
+| Key | Type | Description | Example |
+|-----|------|-------------|---------|
+| `imap_host` | string | Hostname for IMAP connections | `"imap.example.com"` |
+| `imap_port` | integer | Port for IMAP connections | `993` |
+| `imap_security` | string | Security mode for IMAP | `"SSL/TLS"` |
+| `smtp_host` | string | Hostname for SMTP connections | `"smtp.example.com"` |
+| `smtp_port` | integer | Port for SMTP connections | `587` |
+| `smtp_security` | string | Security mode for SMTP | `"STARTTLS"` |
+
+Example:
+```bash
+CLIENTBRIDGE_PUBLIC_CONFIG='{"imap_host":"imap.example.com","imap_port":993,"imap_security":"SSL/TLS","smtp_host":"smtp.example.com","smtp_port":587,"smtp_security":"STARTTLS"}'
+```
+
 ### Throttling
 
 Outbound message throttling limits the number of **external recipients** (recipients whose domain is not managed by this instance) that can be sent from a mailbox or maildomain within a time period, using simple fixed time windows.

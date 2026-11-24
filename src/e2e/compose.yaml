@@ -93,6 +93,17 @@ services:
     depends_on: !override
       - backend
 
+  client-bridge:
+    extends:
+      file: ../../compose.yaml
+      service: client-bridge
+    env_file:
+      - ../../deploy/env/client-bridge.defaults
+      - ../../deploy/env/client-bridge.e2e
+    ports: !reset []
+    depends_on: !override
+      - backend
+
   proxy:
     image: caddy:2-alpine
     environment:
@@ -153,6 +164,8 @@ services:
       - FRONTEND_BASE_URL=http://proxy
       - BACKEND_BASE_URL=http://proxy
       - KEYCLOAK_BASE_URL=http://keycloak:8802
+      - CLIENTBRIDGE_IMAP_HOST=client-bridge
+      - CLIENTBRIDGE_IMAP_PORT=143
       - DOCKER_HOST=tcp://docker-sock-proxy:2375
       - CI=${CI:-false}
       - PW_TEST_HTML_REPORT_OPEN=${PW_TEST_HTML_REPORT_OPEN:-never}
@@ -167,6 +180,8 @@ services:
       proxy:
         condition: service_started
       mta-in:
+        condition: service_started
+      client-bridge:
         condition: service_started
       worker:
         condition: service_started

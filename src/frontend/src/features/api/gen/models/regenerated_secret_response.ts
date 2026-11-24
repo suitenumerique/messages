@@ -13,4 +13,6 @@ export type RegeneratedSecretResponse = {
   api_key?: string;
   /** Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT. */
   secret?: string;
+  /** Present for client-bridge channels — the new IMAP/SMTP app password. Returned ONCE. */
+  password?: string;
 };

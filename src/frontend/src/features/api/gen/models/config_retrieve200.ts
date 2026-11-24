@@ -12,6 +12,7 @@ import type { ConfigRetrieve200FRONTENDTHEMECONFIG } from "./config_retrieve200_
 import type { ConfigRetrieve200FRONTENDFEEDBACKWIDGETCONFIG } from "./config_retrieve200_frontendfeedbackwidgetconfi_g";
 import type { ConfigRetrieve200FRONTENDLAGAUFREWIDGETCONFIG } from "./config_retrieve200_frontendlagaufrewidgetconfi_g";
 import type { ConfigRetrieve200SERVICEMESSAGE } from "./config_retrieve200_servicemessag_e";
+import type { ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG } from "./config_retrieve200_clientbridgepublicconfi_g";
 
 export type ConfigRetrieve200 = {
   readonly ENVIRONMENT: string;
@@ -71,4 +72,6 @@ export type ConfigRetrieve200 = {
   readonly PUSH_VAPID_PUBLIC_KEY?: string;
   /** Service message displayed in a banner on top of the app, configured from the site configuration in the Django admin */
   readonly SERVICE_MESSAGE?: ConfigRetrieve200SERVICEMESSAGE;
+  /** Client-bridge IMAP/SMTP connection settings for email clients. */
+  readonly CLIENTBRIDGE_PUBLIC_CONFIG?: ConfigRetrieve200CLIENTBRIDGEPUBLICCONFIG;
 };

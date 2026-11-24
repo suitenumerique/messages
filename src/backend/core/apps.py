@@ -37,7 +37,8 @@ class CoreConfig(AppConfig):
 
         # Deprecation warning for legacy static API keys.
         for deprecated in ("METRICS_API_KEY", "PROVISIONING_API_KEY"):
-            if getattr(settings, deprecated, None):
+            # Removed settings: not declared anymore, so getattr is the point.
+            if getattr(settings, deprecated, None):  # pylint: disable=getattr-on-settings
                 logger.warning(
                     "%s is set but deprecated and ignored. Migrate to a channel.",
                     deprecated,

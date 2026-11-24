@@ -20,7 +20,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core import models
-from core.api.authentication import ChannelApiKeyAuthentication
+from core.api.authentication import (
+    AppPasswordAuthentication,
+    ChannelApiKeyAuthentication,
+)
 from core.api.permissions import channel_scope
 from core.enums import MAILBOX_ROLES_CAN_SEND, ChannelApiKeyScope
 from core.mda.addresses import address_local_part, normalize_address
@@ -39,6 +42,8 @@ class SubmitRawEmailView(APIView):
     Headers:
         X-Channel-Id: <channel uuid>  (api_key channel with messages:send scope)
         X-API-Key:    <raw secret>
+          or
+        X-Mailbox-Email + X-App-Password (app password with messages:send)
         X-Mail-From:  <mailbox uuid>  (UUID of the sending mailbox)
         X-Rcpt-To:    <addr>[,<addr>] (comma-separated recipient addresses)
 
@@ -48,8 +53,12 @@ class SubmitRawEmailView(APIView):
     Returns: ``{"message_id": "<…>", "status": "accepted"}`` (HTTP 202).
     """
 
-    authentication_classes = [ChannelApiKeyAuthentication]
+    authentication_classes = [
+        ChannelApiKeyAuthentication,
+        AppPasswordAuthentication,
+    ]
     permission_classes = [channel_scope(ChannelApiKeyScope.MESSAGES_SEND)]
+    app_password_scopes = {"post": ChannelApiKeyScope.MESSAGES_SEND}
 
     @extend_schema(exclude=True)
     def post(self, request):
@@ -83,6 +92,17 @@ class SubmitRawEmailView(APIView):
             mailbox=mailbox, mailbox_roles=MAILBOX_ROLES_CAN_SEND
         ):
             raise PermissionDenied("API key is not authorized to send as this mailbox.")
+
+        # An app password acts as the user who created it, who must still be
+        # allowed to send from the mailbox. api_key channels act as nobody.
+        acts_as_user = request.user.is_authenticated
+        if (
+            acts_as_user
+            and not models.MailboxAccess.objects.filter(
+                user=request.user, mailbox=mailbox, role__in=MAILBOX_ROLES_CAN_SEND
+            ).exists()
+        ):
+            raise PermissionDenied("Not authorized to send as this mailbox.")
 
         # Parse envelope recipients.  _create_message_from_inbound creates
         # MessageRecipient rows from MIME To/Cc headers; any address that
@@ -201,6 +221,7 @@ class SubmitRawEmailView(APIView):
                 message,
                 "",
                 "",
+                user=request.user if acts_as_user else None,
                 raw_mime=raw_mime,
             )
             if not prepared:

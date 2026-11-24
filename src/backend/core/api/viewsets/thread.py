@@ -43,6 +43,7 @@ class ThreadViewSet(
 
     serializer_class = serializers.ThreadSerializer
     permission_classes = [permissions.IsAuthenticated]
+    app_password_scopes = {"list": enums.ChannelApiKeyScope.THREADS_READ}
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
 

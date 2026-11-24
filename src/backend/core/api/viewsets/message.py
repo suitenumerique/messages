@@ -16,7 +16,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import action
 
 from core import models
-from core.enums import MessageDeliveryStatusChoices
+from core.enums import ChannelApiKeyScope, MessageDeliveryStatusChoices
 from core.utils import ThreadStatsUpdateDeferrer
 
 from .. import permissions, serializers
@@ -63,6 +63,10 @@ class MessageViewSet(
     """ViewSet for Message model."""
 
     serializer_class = serializers.MessageSerializer
+    app_password_scopes = {
+        "list": ChannelApiKeyScope.MESSAGES_READ,
+        "eml": ChannelApiKeyScope.MESSAGES_READ_BODY,
+    }
     permission_classes = [
         permissions.IsAuthenticated,
         permissions.IsAllowedToAccess,

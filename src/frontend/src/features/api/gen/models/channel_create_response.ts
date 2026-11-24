@@ -62,4 +62,6 @@ export type ChannelCreateResponse = {
   api_key?: string;
   /** webhook channels with auth_method=jwt — the HMAC/JWT signing secret. */
   secret?: string;
+  /** client-bridge channels — the IMAP/SMTP app password. */
+  password?: string;
 };

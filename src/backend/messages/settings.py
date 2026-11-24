@@ -537,6 +537,15 @@ class Base(Configuration):
     STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS = values.ListValue(
         [], environ_name="STORAGE_MESSAGE_EXPORTS_AGE_RECIPIENTS", environ_prefix=None
     )
+
+    # Client bridge (IMAP/SMTP for email clients, see src/client-bridge).
+    # IMAP/SMTP connection settings shown to users in the frontend, e.g.
+    # {"imap_host": "imap.example.com", "imap_port": 993, "imap_security": "SSL/TLS",
+    #  "smtp_host": "smtp.example.com", "smtp_port": 587, "smtp_security": "STARTTLS"}
+    CLIENTBRIDGE_PUBLIC_CONFIG = values.DictValue(
+        {}, environ_name="CLIENTBRIDGE_PUBLIC_CONFIG", environ_prefix=None
+    )
+
     # MDA settings
     # No default on purpose: the MTA-to-MDA channel is authenticated solely by
     # an HS256 JWT signed with this shared secret, so a hardcoded fallback would
@@ -1044,6 +1053,7 @@ class Base(Configuration):
         "DEFAULT_AUTHENTICATION_CLASSES": (
             "mozilla_django_oidc.contrib.drf.OIDCAuthentication",
             "rest_framework.authentication.SessionAuthentication",
+            "core.api.authentication.AppPasswordAuthentication",
         ),
         "DEFAULT_PARSER_CLASSES": [
             "rest_framework.parsers.JSONParser",
@@ -1487,6 +1497,9 @@ class Base(Configuration):
         default=["api_key", "webhook"],
         environ_name="FEATURE_MAILBOX_ADMIN_CHANNELS",
         environ_prefix=None,
+    )
+    FEATURE_CLIENTBRIDGE = values.BooleanValue(
+        default=False, environ_name="FEATURE_CLIENTBRIDGE", environ_prefix=None
     )
     FEATURE_MAILDOMAIN_CREATE = values.BooleanValue(
         default=True, environ_name="FEATURE_MAILDOMAIN_CREATE", environ_prefix=None
@@ -1947,6 +1960,10 @@ class Test(Base):
     SALT_KEY = ["test-salt-for-development-only"]
 
     FEATURE_MAILBOX_ADMIN_CHANNELS = ["api_key", "widget", "webhook"]
+
+    # The client-bridge route is registered at import time, so the feature
+    # must be on for its tests to reach it.
+    FEATURE_CLIENTBRIDGE = True
 
     # Tests must not depend on a reachable rspamd. With no rspamd_url the
     # spam step is a no-op ("no opinion"), so inbound delivery tests

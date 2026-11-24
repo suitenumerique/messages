@@ -139,7 +139,11 @@ FEATURE_AI_SUMMARY=False
 FEATURE_AI_AUTOLABELS=False
 
 # Integrations enabled in the integrations modal (mailbox admins)
-FEATURE_MAILBOX_ADMIN_CHANNELS=api_key,widget,webhook
+FEATURE_MAILBOX_ADMIN_CHANNELS=api_key,widget,webhook,client-bridge
+
+# Client bridge (IMAP/SMTP for email clients)
+FEATURE_CLIENTBRIDGE=True
+CLIENTBRIDGE_PUBLIC_CONFIG={"imap_host":"localhost","imap_port":8919,"imap_security":"PLAIN","smtp_host":"localhost","smtp_port":8921,"smtp_security":"PLAIN"}
 
 # Thread list preview line. On in dev so the feature is exercised locally;
 # ships off by default because it needs backfill_thread_snippets to have run.

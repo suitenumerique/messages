@@ -50,17 +50,22 @@ def _attach_credential(data: dict, channel: models.Channel) -> None:
       - ``webhook`` channels (``auth_method='api_key'``) → ``api_key``
         (HMAC-derived from the root) — same key name as api_key
         channels: both are an API key presented in a request header
+      - ``client-bridge`` channels → ``password`` (plaintext, one-shot)
 
-    For api_key channels the plaintext is one-shot (we only store the
-    hash), so callers must stash it on ``instance._generated_api_key``
-    via the serializer's create flow. For webhook channels the raw root
+    For api_key and client-bridge channels the plaintext is one-shot (we
+    only store the hash), so callers must stash it on
+    ``instance._generated_secret``. For webhook channels the raw root
     sits in ``encrypted_settings["secret"]`` and ``get_webhook_api_key``
     derives lazily — both readable straight off ``channel``.
     """
-    if channel.type == ChannelTypes.API_KEY:
-        plaintext = getattr(channel, "_generated_api_key", None)
+    hashed_keys = {
+        ChannelTypes.API_KEY: "api_key",
+        ChannelTypes.CLIENT_BRIDGE: "password",
+    }
+    if channel.type in hashed_keys:
+        plaintext = getattr(channel, "_generated_secret", None)
         if plaintext:
-            data["api_key"] = plaintext
+            data[hashed_keys[channel.type]] = plaintext
         return
     # Webhook channels: the (jwt→secret / api_key→derived) rule lives on the
     # model so this and the Django-admin regenerate view can't drift.
@@ -236,14 +241,21 @@ class ChannelViewSet(
                                 "HMAC sig and JWT."
                             ),
                         ),
+                        "password": drf_serializers.CharField(
+                            required=False,
+                            help_text=(
+                                "Present for client-bridge channels — the "
+                                "new IMAP/SMTP app password. Returned ONCE."
+                            ),
+                        ),
                     },
                 ),
                 description=(
                     "Rotates the channel's secret. Single-active: the "
                     "previous credential is invalidated immediately. "
                     "The response carries exactly one of ``api_key`` / "
-                    "``secret`` matching the channel's type (and, for "
-                    "webhooks, its current ``auth_method``)."
+                    "``secret`` / ``password`` matching the channel's type "
+                    "(and, for webhooks, its current ``auth_method``)."
                 ),
             ),
             400: OpenApiResponse(description="Channel type has no rotatable secret"),
@@ -296,12 +308,12 @@ class ChannelViewSet(
                 {"type": "This channel type does not support secret rotation."}
             ) from exc
 
-        # api_key channels store only the hash; stash the just-minted
+        # Hashed types store only the hash; stash the just-minted
         # plaintext on the instance so ``_attach_credential`` can find
         # it (the field is read-once and never persisted).
-        if instance.type == ChannelTypes.API_KEY:
+        if instance.type in serializers.ChannelSerializer.HASHED_SECRET_TYPES:
             # pylint: disable-next=protected-access
-            instance._generated_api_key = plaintext  # noqa: SLF001
+            instance._generated_secret = plaintext  # noqa: SLF001
 
         payload: dict = {"id": str(instance.id)}
         _attach_credential(payload, instance)

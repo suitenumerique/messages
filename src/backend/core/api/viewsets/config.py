@@ -29,6 +29,13 @@ def _get_drive_config():
     }
 
 
+def _get_clientbridge_public_config():
+    """Client-bridge connection settings, or None when the feature is off."""
+    if not settings.FEATURE_CLIENTBRIDGE:
+        return None
+    return settings.CLIENTBRIDGE_PUBLIC_CONFIG or None
+
+
 def _get_service_message():
     """Return the service message of the current site, or None when unset."""
     configuration = SiteConfiguration.objects.filter(site_id=settings.SITE_ID).first()
@@ -59,7 +66,7 @@ class ConfigEntry:
         """Return the value to expose for this entry."""
         if self.getter is not None:
             return self.getter()
-        return getattr(settings, self.key, None)
+        return getattr(settings, self.key, None)  # pylint: disable=getattr-on-settings
 
 
 CONFIG_ENTRIES = (
@@ -316,6 +323,23 @@ CONFIG_ENTRIES = (
             "required": ["variant", "message"],
         },
         getter=_get_service_message,
+        required=False,
+    ),
+    ConfigEntry(
+        "CLIENTBRIDGE_PUBLIC_CONFIG",
+        {
+            "type": "object",
+            "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
+            "properties": {
+                "imap_host": {"type": "string"},
+                "imap_port": {"type": "integer"},
+                "imap_security": {"type": "string"},
+                "smtp_host": {"type": "string"},
+                "smtp_port": {"type": "integer"},
+                "smtp_security": {"type": "string"},
+            },
+        },
+        getter=_get_clientbridge_public_config,
         required=False,
     ),
 )

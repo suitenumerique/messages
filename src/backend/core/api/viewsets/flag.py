@@ -16,6 +16,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.views import APIView
 
 from core import models
+from core.enums import ChannelApiKeyScope
 from core.services.search.tasks import update_threads_mailbox_flags_task
 from core.services.trashbin import trashbin_timestamp
 
@@ -53,6 +54,7 @@ class ChangeFlagView(APIView):
     """ViewSet for changing flags on messages or threads."""
 
     permission_classes = [permissions.IsAllowedToAccess]
+    app_password_scopes = {"post": ChannelApiKeyScope.THREADS_WRITE}
     action = "change_flag"
     # There is no object for DRF to check on this collection-level APIView:
     # every id in the request body is filtered through ThreadAccess below.
