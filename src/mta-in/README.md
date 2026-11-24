@@ -118,9 +118,10 @@ make lint-mta-in
 # Pure-Python service
 make test-mta-in-py
 make lint-mta-in-py
-make fuzz-mta-in-py            # Hypothesis suite, about a minute
-make fuzz-mta-in-py-intensive  # the same with 10x the examples, about 10 minutes
-make test-mta-in-py-e2e        # pymta and the real backend together, over SMTP
+make fuzz-mta-in-py              # Hypothesis suite, about a minute
+make fuzz-mta-in-py-intensive    # the same with 10x the examples, about 10 minutes
+make test-mta-in-py-e2e          # pymta and the real backend together, over SMTP
+make test-mta-in-py-e2e-tenants  # the same, one pymta in front of two backends
 ```
 
 `make test-mta-in-py` fails under 100% coverage of `src/pymta`, lines and branches. A branch that no test can reach is removed, not excused.

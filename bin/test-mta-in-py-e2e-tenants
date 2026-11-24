@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# End-to-end test of one pymta in front of two Messages instances: each
+# backend on a database of its own, with an MDA secret of its own. Runs in a
+# compose project of its own, with throwaway databases, and removes it
+# afterwards.
+#
+# Usage: bin/test-mta-in-py-e2e-tenants [pytest args]
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+export DOCKER_USER="${DOCKER_USER:-$(id -u):$(id -g)}"
+export DOCKER_UID="${DOCKER_UID:-$(id -u)}"
+
+project=st-messages-mta-e2e-tenants
+secret_a="tenant-a-secret-0123456789abcdef0123456789"
+secret_b="tenant-b-secret-0123456789abcdef0123456789"
+
+# Without the host ports the dev stack publishes, so it can run next to it.
+override=$(mktemp)
+cat > "$override" <<'EOF'
+services:
+  postgresql: {ports: !reset []}
+  redis: {ports: !reset []}
+  objectstorage: {ports: !reset []}
+EOF
+
+# c reaches b's backend with a's secret: a tenant whose secret is wrong.
+# d points at a port nothing listens on: a tenant whose backend is down.
+tenants=$(mktemp)
+cat > "$tenants" <<EOF
+{
+  "a": {"base_url": "http://$project-backend-a:8000/api/v1.0/", "secret": "$secret_a", "domains": ["tenant-a.example"]},
+  "b": {"base_url": "http://$project-backend-b:8000/api/v1.0/", "secret": "$secret_b", "domains": ["tenant-b.example"]},
+  "c": {"base_url": "http://$project-backend-b:8000/api/v1.0/", "secret": "$secret_a", "domains": ["tenant-c.example"]},
+  "d": {"base_url": "http://$project-backend-a:9/api/v1.0/", "secret": "$secret_a", "domains": ["tenant-d.example"]}
+}
+EOF
+compose=(docker compose -p "$project" -f compose.yaml -f "$override")
+
+cleanup() {
+    # `down` leaves the containers started with `run`: remove them by label.
+    docker ps -aq --filter "label=com.docker.compose.project=$project" \
+        | xargs -r docker rm -f > /dev/null 2>&1 || true
+    "${compose[@]}" down --volumes --remove-orphans > /dev/null 2>&1 || true
+    rm -f "$override" "$tenants"
+}
+trap cleanup EXIT
+
+"${compose[@]}" up -d --wait postgresql redis objectstorage
+"${compose[@]}" exec -T postgresql createdb -U user messages_b
+for db in messages messages_b; do
+    "${compose[@]}" run --rm --no-deps -e DB_NAME="$db" backend-db \
+        python manage.py migrate --no-input
+done
+
+# One backend per instance, named rather than aliased: two aliases of
+# backend-dev would share one name on the network.
+"${compose[@]}" run -d --no-deps --name "$project-backend-a" \
+    -e DB_NAME=messages -e MDA_API_SECRET="$secret_a" -e OPENSEARCH_INDEX_THREADS=False \
+    backend-dev > /dev/null
+"${compose[@]}" run -d --no-deps --name "$project-backend-b" \
+    -e DB_NAME=messages_b -e MDA_API_SECRET="$secret_b" -e OPENSEARCH_INDEX_THREADS=False \
+    backend-dev > /dev/null
+
+# pymta from the working tree, routing by the tenants file.
+"${compose[@]}" run -d --no-deps --name "$project-pymta" \
+    -v "$tenants:/etc/pymta/tenants.json:ro" \
+    -e EXEC_CMD_ONLY=true \
+    -e PYMTA_TENANTS_FILE=/etc/pymta/tenants.json \
+    -e MDA_API_TIMEOUT=30 \
+    -e PYMTA_METRICS_BIND_PORT=0 \
+    mta-in-py-test python -m pymta.server > /dev/null
+
+"${compose[@]}" run --rm --no-deps \
+    -e MTA_E2E_TENANTS_HOST="$project-pymta" \
+    -e MTA_E2E_TENANT_B_DB=messages_b \
+    -e OPENSEARCH_INDEX_THREADS=False \
+    -e WAIT_FOR="$project-backend-a:8000 $project-backend-b:8000 $project-pymta:25" \
+    backend-dev \
+    sh -c 'for i in $(seq 1 60); do python -c "
+import os, socket
+for target in os.environ[\"WAIT_FOR\"].split():
+    host, port = target.rsplit(\":\", 1)
+    socket.create_connection((host, int(port)), timeout=1).close()
+" 2>/dev/null && break; sleep 1; done; exec pytest -p no:cacheprovider core/tests/mda/test_mta_in_py_tenants_e2e.py "$@"' sh "$@"

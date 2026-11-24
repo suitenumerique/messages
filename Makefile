@@ -429,6 +429,10 @@ test-mta-in-py-e2e: build-python-base ## run pymta and the real backend together
 	@bin/test-mta-in-py-e2e
 .PHONY: test-mta-in-py-e2e
 
+test-mta-in-py-e2e-tenants: build-python-base ## run one pymta in front of two backends, each with its own database and secret
+	@bin/test-mta-in-py-e2e-tenants
+.PHONY: test-mta-in-py-e2e-tenants
+
 fuzz-mta-in-py: build-python-base ## run the pymta Hypothesis fuzz suite (about a minute; FUZZ_EXAMPLES=n to scale)
 	@$(COMPOSE) run --build --rm -e EXEC_CMD_ONLY=true -e FUZZ_EXAMPLES mta-in-py-test pytest -q -m fuzz tests/
 .PHONY: fuzz-mta-in-py
