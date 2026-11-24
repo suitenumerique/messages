@@ -5,8 +5,9 @@ file, or directly from an **IMAP** account. Imports can be large and long, so
 they are designed to survive worker restarts, deploys and crashes and to resume
 where they left off — without ever creating duplicate messages.
 
-Gated behind `FEATURE_IMPORT_MESSAGES` (grants the `CAN_IMPORT_MESSAGES`
-mailbox ability). Tuning env vars live in [env.md](env.md#message-import).
+Gated behind `FEATURE_IMPORT_MESSAGES`: it grants the `CAN_IMPORT_MESSAGES`
+mailbox and maildomain abilities, and every import endpoint refuses calls while
+it is off. Tuning env vars live in [env.md](env.md#message-import).
 
 ## Model: an import is a channel
 
@@ -227,7 +228,8 @@ count as activity, so cancelling overlapping imports still cleans everything.
 
 ## API
 
-Imports are a mailbox-nested viewset — `IsMailboxAdmin` required:
+Imports are a mailbox-nested viewset — `IsMailboxAdmin` required, which an
+admin of the mailbox's domain passes without any access to the mailbox:
 
 | Method / path | Action |
 |---|---|
@@ -241,6 +243,22 @@ Continuous mode is only valid for `source=imap`: the create serializer rejects
 `mode=continuous` for file sources, and `PATCH` rejects it for non-IMAP imports.
 The poll cadence itself is the global `MESSAGES_IMPORT_IMAP_POLL_INTERVAL` setting,
 not settable per import.
+
+### Following a domain's imports
+
+`GET /api/v1.0/maildomains/{maildomain_pk}/imports/` lists the runs of every
+mailbox of a domain for its admins (`IsMailDomainAdmin`), so they can follow
+imports without administering each mailbox. It is read-only and paginated; each
+row carries the bare `mailbox` id to act on the run through the routes above,
+plus `mailbox_details` and `created_by` for display.
+
+- `status=active` (default) keeps the runs still to watch: pending or running,
+  continuous pollers (`is_active=True`) and failed runs. It matches the durable
+  `settings["import"]` snapshot, where a running import still reads `pending`.
+  Forgetting a failed run (`DELETE`) takes it out of this view.
+- `status=all` adds the completed and paused runs.
+- Cancelled runs are never listed: they are being purged.
+- `q` searches the mailbox local part and contact name.
 
 ### Uploading a file first
 

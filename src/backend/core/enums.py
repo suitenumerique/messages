@@ -182,6 +182,10 @@ class MailDomainAbilities(models.TextChoices):
 
     CAN_MANAGE_ACCESSES = "manage_accesses", "Can manage accesses"
     CAN_MANAGE_MAILBOXES = "manage_mailboxes", "Can manage mailboxes"
+    CAN_IMPORT_MESSAGES = (
+        "import_messages",
+        "Can import messages into the domain mailboxes",
+    )
 
 
 class MailboxAbilities(models.TextChoices):

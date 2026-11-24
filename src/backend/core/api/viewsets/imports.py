@@ -1,4 +1,5 @@
-"""The imports API: one mailbox-nested viewset for the import-run resource.
+"""The imports API: a mailbox-nested viewset for the import-run resource,
+plus a read-only list of every run of a mail domain for its admins.
 
 ``POST /mailboxes/{id}/imports/`` starts an import (file or IMAP);
 ``GET .../imports/`` + ``GET .../imports/{id}/`` read run state
@@ -10,15 +11,20 @@ its messages. An import run is a ``Channel`` with ``type=import`` grouping
 every message the run created.
 ``MessagesArchiveUploadViewSet`` is the S3 upload helper a file import uses
 before ``POST .../imports/``.
+``GET /maildomains/{id}/imports/`` lists the runs of every mailbox of a domain;
+acting on one of them goes through its mailbox-nested route.
 """
 
 from django.core.files.storage import storages
+from django.db.models import Q
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.functional import cached_property
 
 from botocore.exceptions import ClientError
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
+    OpenApiParameter,
     OpenApiResponse,
     extend_schema,
 )
@@ -45,6 +51,7 @@ from core.services.importer.tasks import cancel_import_task, run_import_task
 
 from .. import permissions
 from ..serializers import (
+    AdminImportRunSerializer,
     ImportCreateSerializer,
     ImportFileUploadAbortSerializer,
     ImportFileUploadCompleteSerializer,
@@ -65,6 +72,20 @@ def _require_owned_file_key(user_id, file_key: str) -> str:
     if not validate_file_key(user_id, file_key):
         raise ValidationError({"file_key": "Unknown upload."})
     return file_key
+
+
+def _import_runs(**filters):
+    """Import runs matching ``filters``, most recently active first.
+
+    ``last_used_at`` is the run's heartbeat (advanced while it works and on
+    every continuous poll); a never-dispatched run falls back to its creation
+    time, so a just-created import still sorts on top.
+    """
+    return (
+        models.Channel.objects.filter(type=enums.ChannelTypes.IMPORT.value, **filters)
+        .annotate(last_activity=Coalesce("last_used_at", "created_at"))
+        .order_by("-last_activity")
+    )
 
 
 @extend_schema(tags=["import"])
@@ -97,21 +118,8 @@ class ImportViewSet(
         return ImportRunSerializer
 
     def get_queryset(self):
-        """Import runs for this mailbox, most recently active first.
-
-        ``last_used_at`` is the run's heartbeat (advanced while it works and on
-        every continuous poll); a never-dispatched run falls back to its
-        creation time, so a just-created import still sorts on top.
-        """
-        return (
-            models.Channel.objects.filter(
-                type=enums.ChannelTypes.IMPORT.value,
-                mailbox=self.mailbox,
-            )
-            .select_related("mailbox")
-            .annotate(last_activity=Coalesce("last_used_at", "created_at"))
-            .order_by("-last_activity")
-        )
+        """Import runs for this mailbox, most recently active first."""
+        return _import_runs(mailbox=self.mailbox).select_related("mailbox")
 
     @extend_schema(
         request=ImportCreateSerializer,
@@ -430,3 +438,88 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
             if code not in ("NoSuchUpload", "NotFound", "404"):
                 raise
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+IMPORTS_LIST_ACTIVE = "active"
+IMPORTS_LIST_ALL = "all"
+
+# The runs a domain admin still has to watch: live (pending or running, or a
+# continuous poller between two passes) or failed. Matched on the durable
+# snapshot, where a running import still reads "pending": its live status only
+# lives in Redis until the run ends.
+ACTIVE_IMPORTS = Q(is_active=True) | Q(
+    settings__import__status__in=[
+        enums.ImportStatus.PENDING.value,
+        enums.ImportStatus.RUNNING.value,
+        enums.ImportStatus.FAILED.value,
+    ]
+)
+
+
+@extend_schema(tags=["import"])
+class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """List the import runs of every mailbox of a mail domain.
+
+    Lets domain admins follow imports without being admins of each mailbox.
+    Read-only: starting or managing a run goes through the mailbox-nested
+    ``ImportViewSet``, whose ``IsMailboxAdmin`` already lets domain admins in.
+    """
+
+    permission_classes = [
+        permissions.IsImportEnabled,
+        permissions.IsSuperUser | permissions.IsMailDomainAdmin,
+    ]
+    serializer_class = AdminImportRunSerializer
+
+    def get_queryset(self):
+        """The domain's import runs, filtered by ``status`` and ``q``."""
+        scope = self.request.query_params.get("status") or IMPORTS_LIST_ACTIVE
+        if scope not in (IMPORTS_LIST_ACTIVE, IMPORTS_LIST_ALL):
+            raise ValidationError(
+                {"status": f"Expected '{IMPORTS_LIST_ACTIVE}' or '{IMPORTS_LIST_ALL}'."}
+            )
+
+        queryset = (
+            _import_runs(mailbox__domain_id=self.kwargs["maildomain_pk"])
+            # A cancelled run is being purged, and its row deleted right after.
+            .exclude(settings__import__status=enums.ImportStatus.CANCELLED.value)
+            .select_related("mailbox__domain", "mailbox__contact", "user")
+        )
+        if scope == IMPORTS_LIST_ACTIVE:
+            queryset = queryset.filter(ACTIVE_IMPORTS)
+
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(mailbox__local_part__icontains=search)
+                | Q(mailbox__contact__name__icontains=search)
+            )
+        return queryset
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                enum=[IMPORTS_LIST_ACTIVE, IMPORTS_LIST_ALL],
+                default=IMPORTS_LIST_ACTIVE,
+                description=(
+                    "`active` (default) lists the running, polling and failed "
+                    "imports; `all` adds the completed and paused ones."
+                ),
+            ),
+            OpenApiParameter(
+                name="q",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description=(
+                    "Filter imports whose mailbox local part or contact name "
+                    "contains this value (case-insensitive)."
+                ),
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List the domain's import runs, most recently active first."""
+        return super().list(request, *args, **kwargs)

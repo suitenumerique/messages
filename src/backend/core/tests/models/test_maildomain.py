@@ -165,6 +165,7 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is False
         assert abilities["manage_accesses"] is False
         assert abilities["manage_mailboxes"] is False
+        assert abilities["import_messages"] is False
 
     def test_models_maildomain_get_abilities_admin(self, user, maildomain):
         """Test MailDomain.get_abilities when user has admin access."""
@@ -183,3 +184,20 @@ class TestMailDomainModelAbilities:
         assert abilities["delete"] is True
         assert abilities["manage_accesses"] is True
         assert abilities["manage_mailboxes"] is True
+        assert abilities["import_messages"] is True
+
+    @override_settings(FEATURE_IMPORT_MESSAGES=False)
+    def test_models_maildomain_get_abilities_admin_imports_disabled(
+        self, user, maildomain
+    ):
+        """Imports stay closed to domain admins when the feature is off."""
+        models.MailDomainAccess.objects.create(
+            maildomain=maildomain,
+            user=user,
+            role=models.MailDomainAccessRoleChoices.ADMIN,
+        )
+
+        abilities = maildomain.get_abilities(user)
+
+        assert abilities["manage_mailboxes"] is True
+        assert abilities["import_messages"] is False

@@ -99,7 +99,8 @@ Defined in `core/api/permissions.py`. The table below lists the main ones and th
 | `HasThreadEventWriteAccess` | Type-aware: `im` events follow the comment rule; every other `ThreadEvent` type requires full edit rights. Update/destroy is author-only. |
 | `IsAllowedToCreateMessage` | User must have `MAILBOX_ROLES_CAN_EDIT` on the sender mailbox (plus EDITOR `ThreadAccess` when replying). |
 | `IsAllowedToManageThreadAccess` | Managing a `ThreadAccess` requires full edit rights on the thread. |
-| `IsMailboxAdmin` / `IsMailDomainAdmin` | Admin paths for mailbox and maildomain management. |
+| `IsMailboxAdmin` / `IsMailDomainAdmin` | Admin paths for mailbox and maildomain management. `IsMailboxAdmin` also lets in the admins of the mailbox's domain (and superusers), so they can import into a mailbox they have no access to. |
+| `IsImportEnabled` | Closes every import endpoint while `FEATURE_IMPORT_MESSAGES` is off. |
 | `HasChannelScope` | Scope check for Channel-authenticated calls; `CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY` further requires `scope_level=global`. |
 
 Shared ORM helpers (`core/models.py`):

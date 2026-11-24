@@ -503,6 +503,9 @@ class MailDomain(BaseModel):
             CRUDAbilities.CAN_DELETE: is_admin,
             MailDomainAbilities.CAN_MANAGE_ACCESSES: is_admin,
             MailDomainAbilities.CAN_MANAGE_MAILBOXES: is_admin,
+            MailDomainAbilities.CAN_IMPORT_MESSAGES: (
+                is_admin and settings.FEATURE_IMPORT_MESSAGES
+            ),
         }
 
     def generate_dkim_key(

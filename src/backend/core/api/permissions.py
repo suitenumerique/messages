@@ -354,7 +354,8 @@ class IsMailboxAdmin(permissions.BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
-        # obj is a MailboxAccess instance.
+        # obj is any instance bound to the URL mailbox through a ``mailbox``
+        # FK: a MailboxAccess, or an import run Channel.
         if not request.user or not request.user.is_authenticated:
             return False
 
