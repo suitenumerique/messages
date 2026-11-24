@@ -771,7 +771,8 @@ export const CalendarInvite = ({
     );
     const method = calendar?.method?.toUpperCase();
     const isCancellation = method === "CANCEL";
-    const isAttendeeAnswer = method === "REPLY" || method === "COUNTER";
+    const isCounter = method === "COUNTER";
+    const isAttendeeAnswer = method === "REPLY" || isCounter;
 
     // Conflict detection for the first event
     const firstEvent = events[0];
@@ -1244,6 +1245,15 @@ export const CalendarInvite = ({
                 >
                     <Icon name="event_busy" type={IconType.OUTLINED} />
                     <span>{t("This event has been cancelled")}</span>
+                </div>
+            )}
+            {isAttendeeAnswer && (
+                <div
+                    className="calendar-invite__method-banner calendar-invite__method-banner--answer"
+                    role="note"
+                >
+                    <Icon name={isCounter ? "update" : "reply"} type={IconType.OUTLINED} />
+                    <span>{isCounter ? t("New time proposed") : t("Invitation response")}</span>
                 </div>
             )}
 
