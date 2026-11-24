@@ -80,7 +80,7 @@ class ImportViewSet(
     ``import_messages`` ability that gates the UI).
     """
 
-    permission_classes = [permissions.IsMailboxAdmin]
+    permission_classes = [permissions.IsImportEnabled, permissions.IsMailboxAdmin]
     serializer_class = ImportRunSerializer
     pagination_class = None
 
@@ -304,7 +304,7 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
     ``create_bucket`` (see docs/imports.md).
     """
 
-    permission_classes = [permissions.IsMailboxAdmin]
+    permission_classes = [permissions.IsImportEnabled, permissions.IsMailboxAdmin]
     storage = storages["message-imports"]
     lookup_url_kwarg = "upload_id"
     lookup_field = "upload_id"

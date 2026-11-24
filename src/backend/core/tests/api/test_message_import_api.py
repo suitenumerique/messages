@@ -754,3 +754,55 @@ class TestImportChannelsExcludedFromIntegrations:
         ids = [row["id"] for row in response.data]
         assert str(widget.id) in ids
         assert str(import_channel.id) not in ids
+
+
+@pytest.mark.django_db
+class TestImportFeatureFlag:
+    """``FEATURE_IMPORT_MESSAGES=False`` closes the API, not just the UI."""
+
+    def test_list_denied_when_feature_disabled(
+        self, api_client, mailbox, user, settings
+    ):
+        settings.FEATURE_IMPORT_MESSAGES = False
+        _make_import(mailbox, user)
+
+        response = api_client.get(
+            reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id})
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_create_denied_when_feature_disabled(self, api_client, mailbox, settings):
+        settings.FEATURE_IMPORT_MESSAGES = False
+
+        with patch("core.services.importer.service.run_import_task") as mock_task:
+            response = api_client.post(
+                reverse("mailbox-imports-list", kwargs={"mailbox_id": mailbox.id}),
+                {
+                    "source": "imap",
+                    "imap_server": "imap.example.com",
+                    "imap_port": 993,
+                    "username": "user@example.com",
+                    "password": "secret",
+                    "use_ssl": True,
+                },
+                format="json",
+            )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_task.delay.assert_not_called()
+        assert not models.Channel.objects.filter(mailbox=mailbox).exists()
+
+    def test_cancel_denied_when_feature_disabled(
+        self, api_client, mailbox, user, settings
+    ):
+        settings.FEATURE_IMPORT_MESSAGES = False
+        channel = _make_import(mailbox, user)
+
+        with patch("core.api.viewsets.imports.cancel_import_task") as mock_task:
+            response = api_client.post(
+                reverse(
+                    "mailbox-imports-cancel",
+                    kwargs={"mailbox_id": mailbox.id, "pk": channel.id},
+                )
+            )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        mock_task.delay.assert_not_called()
