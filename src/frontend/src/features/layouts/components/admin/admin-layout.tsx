@@ -27,10 +27,12 @@ function AdminLayoutContent({
   const { t } = useTranslation();
   const { selectedMailDomain } = useAdminMailDomain();
   const canViewDomainAdmin = useAbility(Abilities.CAN_VIEW_DOMAIN_ADMIN);
+  const canImport = useAbility(Abilities.CAN_IMPORT_MAILDOMAIN_MESSAGES, selectedMailDomain);
   const tabLabels: Record<string, string> = {
     addresses: t("Addresses"),
     dns: t("DNS"),
     signatures: t("Signatures"),
+    imports: t("Imports"),
   };
   const domainName = selectedMailDomain?.name || selectedMailDomain?.id;
 
@@ -92,6 +94,7 @@ function AdminLayoutContent({
       },
     { id: "dns", label: t("DNS"), to: "/domain/$maildomainId/dns" as const, icon: "dns" },
     { id: "signatures", label: t("Signatures"), to: "/domain/$maildomainId/signatures" as const, icon: "drive_file_rename_outline" },
+    ...(canImport ? [{ id: "imports", label: t("Imports"), to: "/domain/$maildomainId/imports" as const, icon: "move_to_inbox" }] : []),
   ] : [];
 
   if (!canViewDomainAdmin) {

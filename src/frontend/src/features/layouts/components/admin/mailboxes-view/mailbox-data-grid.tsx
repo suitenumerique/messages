@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ModalMailboxResetPassword from "../modal-mailbox-reset-password";
 import ModalMailboxExport from "../modal-mailbox-export";
+import { ModalMailboxImport } from "../modal-mailbox-import";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { ModalCreateOrUpdateMailbox } from "../modal-create-update-mailbox";
 import MailboxHelper from "@/features/utils/mailbox-helper";
@@ -29,6 +30,7 @@ enum MailboxEditAction {
     RESET_PASSWORD = 'resetPassword',
     MANAGE_ACCESS = 'manageAccess',
     EXPORT = 'export',
+    IMPORT = 'import',
 }
 
 export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminUserDataGridProps) => {
@@ -48,6 +50,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
     // and a scalar would lose the first id when a second toggle starts).
     const [pendingTotpMailboxIds, setPendingTotpMailboxIds] = useState<Set<string>>(new Set());
     const canManageMailboxes = useAbility(Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES, domain);
+    const canImport = useAbility(Abilities.CAN_IMPORT_MAILDOMAIN_MESSAGES, domain);
     const deleteMailboxMutation = useMaildomainsMailboxesDestroy();
     const setMandatoryTotpMutation = useMaildomainsMailboxesSetMandatoryTotp();
     const resetTotpMutation = useMaildomainsMailboxesResetTotp();
@@ -129,6 +132,11 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
 
     const handleExport = (mailbox: MailboxAdmin) => {
         setEditAction(MailboxEditAction.EXPORT);
+        setEditedMailbox(mailbox);
+    }
+
+    const handleImport = (mailbox: MailboxAdmin) => {
+        setEditAction(MailboxEditAction.IMPORT);
         setEditedMailbox(mailbox);
     }
 
@@ -254,6 +262,7 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                     ? () => handleResetTotp(row)
                     : undefined}
                 onExport={() => handleExport(row)}
+                onImport={canImport ? () => handleImport(row) : undefined}
                 onDelete={() => handleDelete(row)}
                 onUpdate={() => handleUpdate(row)}
             />,
@@ -332,6 +341,12 @@ export const AdminMailboxDataGrid = ({ domain, pagination, searchQuery }: AdminU
                         mailbox={editedMailbox}
                         domainId={domain.id}
                     />
+                    <ModalMailboxImport
+                        isOpen={editAction === MailboxEditAction.IMPORT}
+                        onClose={handleCloseEditUserModal}
+                        domainId={domain.id}
+                        mailbox={{ id: editedMailbox.id, email: MailboxHelper.toString(editedMailbox) }}
+                    />
                 </>
             )}
         </div>
@@ -343,11 +358,12 @@ type ActionsRowProps = {
     onResetPassword?: () => void;
     onResetTotp?: () => void;
     onExport: () => void;
+    onImport?: () => void;
     onDelete: () => void;
     onUpdate: () => void;
 };
 
-const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onExport, onDelete, onUpdate }: ActionsRowProps) => {
+const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onExport, onImport, onDelete, onUpdate }: ActionsRowProps) => {
     const [isMoreActionsOpen, setMoreActionsOpen] = useState<boolean>(false);
     const { t } = useTranslation();
 
@@ -358,6 +374,7 @@ const ActionsRow = ({ onManageAccess, onResetPassword, onResetTotp, onExport, on
         ...(onResetPassword ? [{ icon: <Icon name="lock" size={IconSize.SMALL} />, label: t('Reset password'), callback: onResetPassword }] : []),
         ...(onResetTotp ? [{ icon: <Icon name="security" size={IconSize.SMALL} />, label: t('Reset 2FA'), callback: onResetTotp }] : []),
         { icon: <Icon name="file_download" size={IconSize.SMALL} />, label: t('Export mailbox'), callback: onExport },
+        ...(onImport ? [{ icon: <Icon name="move_to_inbox" size={IconSize.SMALL} />, label: t('Import messages'), callback: onImport }] : []),
     ];
     const destructive: DropdownMenuItem = {
       icon: <Icon icon={Trash} size={IconSize.SMALL} />, label: t('Delete'), callback: onDelete, variant: 'danger'

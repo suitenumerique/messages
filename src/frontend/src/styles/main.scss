@@ -83,6 +83,8 @@
 @use "./../features/forms/components/combobox";
 @use "./../features/layouts/components/mailbox-panel/components/mailbox-labels/components/label-form-modal/components/color-palette-field";
 @use "./../features/layouts/components/admin/signatures-view";
+@use "./../features/layouts/components/admin/imports-view" as admin-imports-view;
+@use "./../features/layouts/components/admin/modal-mailbox-import";
 @use "./../features/layouts/components/mailbox-settings/autoreplies-view";
 @use "./../features/layouts/components/mailbox-settings/devices-view";
 @use "./../features/quota/components/quota-widget";

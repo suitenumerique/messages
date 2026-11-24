@@ -25,6 +25,7 @@ enum UserAbilities {
 enum MaildomainAbilities {
   CAN_MANAGE_MAILDOMAIN_MAILBOXES = "manage_mailboxes",
   CAN_MANAGE_MAILDOMAIN_ACCESSES = "manage_accesses",
+  CAN_IMPORT_MAILDOMAIN_MESSAGES = "import_messages",
 }
 
 // Thread abilities computed by the backend `Thread.get_abilities(user, mailbox)`.
@@ -95,6 +96,7 @@ function useAbility(
     case Abilities.CAN_EMPTY_TRASH:
     case Abilities.CAN_MANAGE_MAILDOMAIN_MAILBOXES:
     case Abilities.CAN_MANAGE_MAILDOMAIN_ACCESSES:
+    case Abilities.CAN_IMPORT_MAILDOMAIN_MESSAGES:
     case Abilities.CAN_MANAGE_SOME_MAILDOMAIN_ACCESSES:
     case Abilities.CAN_EDIT_THREAD:
       return (resource as ResourceWithAbilities).abilities[ability] === true;

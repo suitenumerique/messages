@@ -1,0 +1,30 @@
+// Domain imports list: the search shares its row with the "show all" switch,
+// and each run names its mailbox above who started it.
+.admin-imports {
+    &__toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--c--globals--spacings--sm) var(--c--globals--spacings--lg);
+
+        > :first-child {
+            flex: 1 1 20rem;
+        }
+    }
+
+    &__mailbox {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        strong {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+
+    &__launcher {
+        font-size: 10px;
+        color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
+}
