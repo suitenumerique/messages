@@ -5,6 +5,7 @@ import { Modal, ModalSize, Select, useModals } from "@gouvfr-lasuite/ui-componen
 import {
     getMailboxesImportsListQueryKey,
     getMaildomainsImportsListQueryKey,
+    getMaildomainsImportsStatsRetrieveQueryKey,
     useMaildomainsMailboxesList,
 } from "@/features/api/gen";
 import { ImportNewView } from "@/features/layouts/components/mailbox-settings/imports-view/import-new-view";
@@ -114,6 +115,7 @@ export const ModalMailboxImport = ({ isOpen, onClose, domainId, mailbox }: Modal
         );
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: getMaildomainsImportsListQueryKey(domainId), exact: false }),
+            queryClient.invalidateQueries({ queryKey: getMaildomainsImportsStatsRetrieveQueryKey(domainId) }),
             queryClient.invalidateQueries({ queryKey: getMailboxesImportsListQueryKey(target.id), exact: false }),
         ]);
     };

@@ -12,6 +12,7 @@ import { Badge, IconSize, IconType } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
 import { useTheme } from "@/features/providers/theme";
 import { LayoutProvider } from "@/features/layouts/components/layout-context";
+import { ImportsTabLabel } from "@/features/layouts/components/admin/imports-view/imports-tab-label";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -94,7 +95,12 @@ function AdminLayoutContent({
       },
     { id: "dns", label: t("DNS"), to: "/domain/$maildomainId/dns" as const, icon: "dns" },
     { id: "signatures", label: t("Signatures"), to: "/domain/$maildomainId/signatures" as const, icon: "drive_file_rename_outline" },
-    ...(canImport ? [{ id: "imports", label: t("Imports"), to: "/domain/$maildomainId/imports" as const, icon: "move_to_inbox" }] : []),
+    ...(canImport ? [{
+        id: "imports",
+        label: <ImportsTabLabel maildomainId={selectedMailDomain.id} />,
+        to: "/domain/$maildomainId/imports" as const,
+        icon: "move_to_inbox",
+    }] : []),
   ] : [];
 
   if (!canViewDomainAdmin) {

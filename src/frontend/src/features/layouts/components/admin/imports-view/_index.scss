@@ -12,6 +12,17 @@
         align-self: flex-end;
     }
 
+    &__tab-label {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--3xs);
+    }
+
+    &__failed-badge {
+        align-items: center;
+        gap: var(--c--globals--spacings--4xs);
+    }
+
     &__mailbox {
         display: flex;
         flex-direction: column;

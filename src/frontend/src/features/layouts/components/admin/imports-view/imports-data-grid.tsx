@@ -8,6 +8,7 @@ import {
     MaildomainsImportsListStatusItem as ListStatus,
     getMailboxesImportsListQueryKey,
     getMaildomainsImportsListQueryKey,
+    getMaildomainsImportsStatsRetrieveQueryKey,
     useMaildomainsImportsList,
 } from "@/features/api/gen";
 import { ImportsDataGrid } from "@/features/layouts/components/mailbox-settings/imports-view/imports-data-grid";
@@ -62,6 +63,9 @@ export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, statuses
             queryClient.invalidateQueries({
                 queryKey: getMaildomainsImportsListQueryKey(domain.id),
                 exact: false,
+            }),
+            queryClient.invalidateQueries({
+                queryKey: getMaildomainsImportsStatsRetrieveQueryKey(domain.id),
             }),
             row.mailbox && queryClient.invalidateQueries({
                 queryKey: getMailboxesImportsListQueryKey(row.mailbox),
