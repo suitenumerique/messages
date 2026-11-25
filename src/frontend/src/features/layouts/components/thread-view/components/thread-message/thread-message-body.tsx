@@ -13,8 +13,10 @@ import { Banner } from "@/features/ui/components/banner";
 import { getMailboxesImageProxyListUrl } from "@/features/api/gen/mailboxes/mailboxes";
 import { getNativeServerUrl, toNativeMediaUrl } from "@/features/native/media-url";
 import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
+import { handle } from "@/features/utils/errors";
 import { renderBodyParts } from "./renderers";
 import { linkifyHtml } from "./renderers/linkify";
+import { mayHaveViewportHeightLengths, removeViewportHeightLengths } from "./renderers/utils";
 import { isHostTrusted } from "./is-host-trusted";
 import { useLinkConfirmation } from "./use-link-confirmation";
 import { ThreadMessageBodyProps } from "./types";
@@ -49,6 +51,21 @@ const CSP = [
     // No frame ancestors
     "frame-ancestors 'none'",
 ].join('; ');
+
+// The iframe takes the height of its root element. An email stylesheet sizing
+// the root elements against the viewport (e.g. a quoted template with
+// `html, body { height: 100% }`) would make that height depend on the iframe
+// height itself, stuck at 0 when the message was folded. Inline !important
+// declarations win over any declaration of the email stylesheets.
+const ROOT_SIZING_GUARD = "height: auto !important; min-height: 0 !important; max-height: none !important;";
+
+// Content changes that alter the message height after the iframe load event:
+// late image loads and failures, quote toggles, form controls revealing content
+// (CSS `:checked` tricks) and finished CSS animations. Some of these events do
+// not bubble, so they are caught in the capture phase. `transitionend` is left
+// out on purpose: a resize of the iframe can itself start a transition (a style
+// depending on the iframe height), and following it would loop.
+const CONTENT_CHANGE_EVENTS = ['load', 'error', 'toggle', 'change', 'animationend'] as const;
 
 /**
  * Detect link masking: the link text pretends to be a URL but points to a
@@ -163,7 +180,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
 
     const wrappedHtml = useMemo(() => {
         return `
-            <html>
+            <html style="${ROOT_SIZING_GUARD}">
             <head>
                 <meta http-equiv="Content-Security-Policy" content="${CSP}">
                 <base target="_blank">
@@ -186,8 +203,10 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
                 .body-part + .body-part {
                     margin-top: ${tokens.themes[cunninghamTheme].globals.spacings.base};
                 }
+                /* Trim the empty space above the message, not its padding:
+                   a padding lies within the background of the email layout. */
                 body > *:first-child {
-                    padding-top: 0 !important;
+                    margin-top: 0 !important;
                 }
                 body > *:last-child {
                     margin-bottom: ${tokens.themes[cunninghamTheme].globals.spacings.base};
@@ -342,7 +361,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
                 }
                 </style>
             </head>
-            <body data-theme-variant="${variant}">
+            <body style="${ROOT_SIZING_GUARD}" data-theme-variant="${variant}">
                 ${sanitizedHtmlBody}
             </body>
             </html>
@@ -350,6 +369,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
     }, [sanitizedHtmlBody, cunninghamTheme, variant, areLinksDisabled]);
 
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
+    const isIframeLoadedRef = useRef(false);
 
     const resizeIframe = useCallback(() => {
         if (iframeRef.current?.contentWindow?.document.documentElement) {
@@ -358,8 +378,6 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
             iframeRef.current.style.height = `${Math.ceil(height)}px`;
         }
     }, []);
-
-    useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
 
     // Delegated handler for link activations inside the iframe (mouse click,
     // keyboard activation and middle click through the auxclick event).
@@ -407,26 +425,66 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
     }, [confirmLinkOpening, trustedLinkDomains]);
 
     const handleIframeLoad = useCallback(() => {
-        // Sized synchronously so the height is right when onLoad fires.
-        resizeIframe();
-        resizeObserverRef.current?.disconnect();
-        if (iframeRef.current?.contentWindow?.document) {
-            const doc = iframeRef.current.contentWindow.document;
+        try {
+            resizeObserverRef.current?.disconnect();
+            if (iframeRef.current?.contentWindow?.document) {
+                const doc = iframeRef.current.contentWindow.document;
+                isIframeLoadedRef.current = true;
 
-            // Follow every later change of the content height: quote toggles,
-            // lazy images loading after the load event, reflows when the
-            // iframe width changes... A srcdoc document always renders in
-            // standards mode, so the root element is exactly the content
-            // height and never stretches to the iframe viewport.
-            resizeObserverRef.current = new ResizeObserver(resizeIframe);
-            resizeObserverRef.current.observe(doc.documentElement);
+                // Intercept link activations to reveal the real target before
+                // opening it. Done first, so that no step below can leave the
+                // links of a message unchecked.
+                doc.addEventListener('click', handleLinkActivation);
+                doc.addEventListener('auxclick', handleLinkActivation);
 
-            // Intercept link activations to reveal the real target before opening it
-            doc.addEventListener('click', handleLinkActivation);
-            doc.addEventListener('auxclick', handleLinkActivation);
+                try {
+                    if (mayHaveViewportHeightLengths(sanitizedHtmlBody)) {
+                        removeViewportHeightLengths(doc);
+                    }
+                } catch (error) {
+                    // Best effort: a message keeping its viewport sizes only
+                    // overflows its iframe, it must still be sized and shown.
+                    handle(new Error("Failed to drop the viewport sizes of a message."), { extra: { error } });
+                }
+                // Sized synchronously so the height is right when onLoad fires.
+                resizeIframe();
+
+                // Follow what changes the content height: reflows when the iframe
+                // width changes and the content change events. Never the size of
+                // the root element itself: an email style may still depend on the
+                // iframe viewport (e.g. a `@media (max-height)` query), so every
+                // new iframe height could change it again and loop.
+                let observedWidth: number | null = null;
+                resizeObserverRef.current = new ResizeObserver(([entry]) => {
+                    if (entry.contentRect.width === observedWidth) {
+                        return;
+                    }
+                    observedWidth = entry.contentRect.width;
+                    // Next frame: resizing the observed iframe within its own
+                    // notification makes the browser report a ResizeObserver
+                    // loop error.
+                    requestAnimationFrame(resizeIframe);
+                });
+                resizeObserverRef.current.observe(iframeRef.current);
+                CONTENT_CHANGE_EVENTS.forEach((type) => doc.addEventListener(type, resizeIframe, true));
+            }
+        } finally {
+            // The message stays behind its loader until onLoad runs: whatever
+            // fails above must not keep it hidden. The error still propagates.
+            onLoad?.();
         }
-        onLoad?.();
-    }, [onLoad, resizeIframe, handleLinkActivation]);
+    }, [onLoad, resizeIframe, handleLinkActivation, sanitizedHtmlBody]);
+
+    // A message rendered folded was measured with a 0px high iframe viewport: a
+    // style depending on the viewport height (e.g. a `@media (orientation)`
+    // query) may change its content once it is shown.
+    useEffect(() => {
+        if (!isHidden && isIframeLoadedRef.current) {
+            resizeIframe();
+        }
+    }, [isHidden, resizeIframe]);
+
+    useEffect(() => () => resizeObserverRef.current?.disconnect(), []);
 
     return (
         <>
