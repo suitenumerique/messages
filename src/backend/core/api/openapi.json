@@ -4812,6 +4812,113 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/imports/": {
+            "get": {
+                "operationId": "maildomains_imports_list",
+                "description": "List the domain's import runs, most recently active first.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "name": "page",
+                        "required": false,
+                        "in": "query",
+                        "description": "A page number within the paginated result set.",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "q",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter imports whose mailbox local part or contact name contains this value (case-insensitive)."
+                    },
+                    {
+                        "in": "query",
+                        "name": "status",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "completed",
+                                    "failed",
+                                    "in_progress"
+                                ]
+                            }
+                        },
+                        "description": "Keep the imports in any of these statuses: `in_progress` (running, or polling for new messages), `failed`, `completed` (finished, or polling paused). Every status when omitted."
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginatedAdminImportRunList"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/v1.0/maildomains/{maildomain_pk}/imports/stats/": {
+            "get": {
+                "operationId": "maildomains_imports_stats_retrieve",
+                "description": "Count the domain's import runs in each status, in one query.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminImportStats"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
             "get": {
                 "operationId": "maildomains_mailboxes_list",
@@ -7885,6 +7992,200 @@
     },
     "components": {
         "schemas": {
+            "AdminImportRun": {
+                "type": "object",
+                "description": "An import run listed among every import of a mail domain.\n\nA domain-wide list mixes mailboxes and launchers, so each row also says\nwhich mailbox it fills and who started it. ``mailbox`` stays the bare id:\nacting on the run goes through ``/mailboxes/{mailbox}/imports/{id}/``.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "description": "Human-readable name for this channel"
+                    },
+                    "mailbox": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Mailbox that receives messages from this channel",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "is_active": {
+                        "type": "boolean",
+                        "readOnly": true,
+                        "title": "Active",
+                        "description": "Uncheck to pause this channel without deleting it."
+                    },
+                    "status": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "mode": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "poll_interval": {
+                        "type": "integer",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "imap_username": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "total_messages": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "success_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failure_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failure_reasons": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "skipped_folders": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "skipped_folders_count": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "progress": {
+                        "type": "number",
+                        "format": "double",
+                        "readOnly": true
+                    },
+                    "error": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "nullable": true,
+                        "readOnly": true
+                    },
+                    "last_used_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "nullable": true,
+                        "description": "Operational timestamp updated (throttled) whenever the channel is used."
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Created on",
+                        "description": "date and time at which a record was created"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true,
+                        "title": "Updated on",
+                        "description": "date and time at which a record was last updated"
+                    },
+                    "mailbox_details": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/MailboxLight"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "created_by": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/UserWithoutAbilities"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "created_by",
+                    "error",
+                    "failure_count",
+                    "failure_reasons",
+                    "finished_at",
+                    "id",
+                    "imap_username",
+                    "is_active",
+                    "last_used_at",
+                    "mailbox",
+                    "mailbox_details",
+                    "mode",
+                    "name",
+                    "poll_interval",
+                    "progress",
+                    "skipped_folders",
+                    "skipped_folders_count",
+                    "source_type",
+                    "started_at",
+                    "status",
+                    "success_count",
+                    "total_messages",
+                    "updated_at"
+                ]
+            },
+            "AdminImportStats": {
+                "type": "object",
+                "description": "How many import runs of a mail domain are in each list status.",
+                "properties": {
+                    "in_progress": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failed": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "completed": {
+                        "type": "integer",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "completed",
+                    "failed",
+                    "in_progress"
+                ]
+            },
             "Attachment": {
                 "type": "object",
                 "description": "Serialize attachments.",
@@ -9068,6 +9369,10 @@
                             "manage_mailboxes": {
                                 "type": "boolean",
                                 "description": "Can manage mailboxes"
+                            },
+                            "import_messages": {
+                                "type": "boolean",
+                                "description": "Can import messages into the domain mailboxes"
                             }
                         },
                         "required": [
@@ -9077,7 +9382,8 @@
                             "patch",
                             "delete",
                             "manage_accesses",
-                            "manage_mailboxes"
+                            "manage_mailboxes",
+                            "import_messages"
                         ],
                         "readOnly": true
                     }
@@ -10555,6 +10861,37 @@
                 ],
                 "type": "string",
                 "description": "* `oneshot` - oneshot\n* `continuous` - continuous"
+            },
+            "PaginatedAdminImportRunList": {
+                "type": "object",
+                "required": [
+                    "count",
+                    "results"
+                ],
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "example": 123
+                    },
+                    "next": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=4"
+                    },
+                    "previous": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "uri",
+                        "example": "http://api.example.org/accounts/?page=2"
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminImportRun"
+                        }
+                    }
+                }
             },
             "PaginatedDriveItemResponse": {
                 "type": "object",

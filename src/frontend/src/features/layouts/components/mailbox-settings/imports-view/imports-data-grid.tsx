@@ -1,11 +1,10 @@
-import { DropdownMenu, DropdownMenuOption, IconSize, Spinner } from "@gouvfr-lasuite/ui-components";
+import { DropdownMenu, DropdownMenuOption, IconSize, Spinner, usePagination } from "@gouvfr-lasuite/ui-components";
 import { Button, Column, DataGrid, useModals } from "@gouvfr-lasuite/ui-components";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { Fragment, ReactNode, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-    Mailbox,
     ImportRun,
     useMailboxesImportsList,
     useMailboxesImportsCancelCreate,
@@ -13,17 +12,26 @@ import {
     useMailboxesImportsPartialUpdate,
     getMailboxesImportsListQueryKey,
 } from "@/features/api/gen";
+import { Badge } from "@/features/ui/components/badge";
 import { Banner } from "@/features/ui/components/banner";
 import ProgressBar from "@/features/ui/components/progress-bar";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
 import { handle } from "@/features/utils/errors";
 import { DateHelper } from "@/features/utils/date-helper";
-import { isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
+import { importsRefetchInterval, isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
 import { Icon } from "@/features/ui/components/icon";
 import { Pause, Play, Trash } from "@gouvfr-lasuite/ui-components/icons";
 
-type ImportsDataGridProps = {
-    mailbox: Mailbox;
+type ImportsDataGridProps<TRow extends ImportRun> = {
+    rows: TRow[];
+    isLoading: boolean;
+    isError: boolean;
+    /** Refreshes the lists showing `row` once an action on it has settled. */
+    onRowChange: (row: TRow) => Promise<unknown>;
+    /** Columns shown before the import type, e.g. the mailbox of each run. */
+    leadingColumns?: Column<TRow>[];
+    emptyPlaceholderLabel?: string;
+    pagination?: ReturnType<typeof usePagination>;
 };
 
 const isRunning = (row: ImportRun) => !isTerminal(row.status);
@@ -70,23 +78,23 @@ const importFailureMessage = (
     return error;
 };
 
-type RowActionsProps = {
-    row: ImportRun;
+type RowActionsProps<TRow extends ImportRun> = {
+    row: TRow;
     pending: boolean;
     // Open state lives in the parent (keyed by row id): the grid re-renders
-    // every 2s while a run is in progress, and menu state local to the row
+    // on every poll while a run is in progress, and menu state local to the row
     // would be reset — closing the menu in the user's hand.
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
-    onPause: (row: ImportRun) => void;
-    onResume: (row: ImportRun) => void;
-    onMakeRecurring: (row: ImportRun) => void;
-    onForget: (row: ImportRun) => void;
-    onCancel: (row: ImportRun) => void;
+    onPause: (row: TRow) => void;
+    onResume: (row: TRow) => void;
+    onMakeRecurring: (row: TRow) => void;
+    onForget: (row: TRow) => void;
+    onCancel: (row: TRow) => void;
 };
 
 /** The per-row [...] menu: every action spelled out, nothing icon-only. */
-const RowActions = ({ row, pending, isOpen, onOpenChange, onPause, onResume, onMakeRecurring, onForget, onCancel }: RowActionsProps) => {
+const RowActions = <TRow extends ImportRun>({ row, pending, isOpen, onOpenChange, onPause, onResume, onMakeRecurring, onForget, onCancel }: RowActionsProps<TRow>) => {
     const { t } = useTranslation();
 
     const options: DropdownMenuOption[] = [];
@@ -144,31 +152,24 @@ const RowActions = ({ row, pending, isOpen, onOpenChange, onPause, onResume, onM
     );
 };
 
-export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
+/**
+ * The imports of one or many mailboxes, with the actions on each run. Rows
+ * come from the caller; every action goes through the run's own mailbox route,
+ * which domain admins pass too.
+ */
+export const ImportsDataGrid = <TRow extends ImportRun>({
+    rows,
+    isLoading,
+    isError,
+    onRowChange,
+    leadingColumns = [],
+    emptyPlaceholderLabel,
+    pagination,
+}: ImportsDataGridProps<TRow>) => {
     const { t, i18n } = useTranslation();
     const modals = useModals();
-    const queryClient = useQueryClient();
     const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-
-    const { data, isLoading, error } = useMailboxesImportsList(mailbox.id, {
-        query: {
-            enabled: !!mailbox.id,
-            // Poll while any run is still progressing so status/progress stay
-            // live; stop once everything is terminal (continuous channels
-            // between polls read "completed", so they don't pin the poll).
-            refetchInterval: (query) => {
-                const rows =
-                    (query.state.data?.data as ImportRun[] | undefined) ?? [];
-                const active = rows.some(
-                    (r) => r.status === "pending" || r.status === "running",
-                );
-                return active ? 15000 : false;
-            },
-        },
-        // Background status poll: let foreground requests win the wire.
-        request: { priority: "low" },
-    });
 
     const cancelMutation = useMailboxesImportsCancelCreate();
     const updateMutation = useMailboxesImportsPartialUpdate();
@@ -177,20 +178,15 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
     // A cancelled run is removed server-side once its purge settles; filter
     // out any row still (or left) in the cancelled state so cancelling makes
     // the import disappear from the list immediately.
-    const rows = (data?.data ?? []).filter((row) => row.status !== STATUS_CANCELLED);
+    const visibleRows = rows.filter((row) => row.status !== STATUS_CANCELLED);
 
-    const invalidate = async () => {
-        await queryClient.invalidateQueries({
-            queryKey: getMailboxesImportsListQueryKey(mailbox.id),
-            exact: false,
-        });
-    };
-
-    const withPending = async (id: string, fn: () => Promise<unknown>, successMessage?: string) => {
+    const withPending = async (row: TRow, fn: (mailboxId: string) => Promise<unknown>, successMessage?: string) => {
+        const { id, mailbox: mailboxId } = row;
+        if (!mailboxId) return;
         setPendingIds((prev) => new Set(prev).add(id));
         try {
-            await fn();
-            await invalidate();
+            await fn(mailboxId);
+            await onRowChange(row);
             if (successMessage) {
                 addToast(
                     <ToasterItem type="info">
@@ -214,43 +210,43 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
         }
     };
 
-    const handlePause = (row: ImportRun) =>
+    const handlePause = (row: TRow) =>
         withPending(
-            row.id,
-            () => updateMutation.mutateAsync({ mailboxId: mailbox.id, id: row.id, data: { is_active: false } }),
+            row,
+            (mailboxId) => updateMutation.mutateAsync({ mailboxId, id: row.id, data: { is_active: false } }),
             t("Polling paused."),
         );
 
-    const handleResume = (row: ImportRun) =>
+    const handleResume = (row: TRow) =>
         withPending(
-            row.id,
-            () => updateMutation.mutateAsync({ mailboxId: mailbox.id, id: row.id, data: { is_active: true } }),
+            row,
+            (mailboxId) => updateMutation.mutateAsync({ mailboxId, id: row.id, data: { is_active: true } }),
             t("Polling resumed."),
         );
 
-    const handleMakeRecurring = (row: ImportRun) =>
+    const handleMakeRecurring = (row: TRow) =>
         withPending(
-            row.id,
-            () => updateMutation.mutateAsync({ mailboxId: mailbox.id, id: row.id, data: { mode: "continuous" } }),
+            row,
+            (mailboxId) => updateMutation.mutateAsync({ mailboxId, id: row.id, data: { mode: "continuous" } }),
             t("This account will now be checked for new mail regularly."),
         );
 
-    const handleForget = (row: ImportRun) =>
+    const handleForget = (row: TRow) =>
         withPending(
-            row.id,
-            () => forgetMutation.mutateAsync({ mailboxId: mailbox.id, id: row.id }),
+            row,
+            (mailboxId) => forgetMutation.mutateAsync({ mailboxId, id: row.id }),
             t("Import removed from the list. Its messages were kept."),
         );
 
-    const handleCancel = async (row: ImportRun) => {
+    const handleCancel = async (row: TRow) => {
         const decision = await modals.deleteConfirmationModal({
             title: t('Delete the messages of "{{name}}"', { name: row.name }),
             children: t("This deletes every message this import created, except those in conversations with replies or other activity. This action is irreversible!"),
         });
         if (decision !== "delete") return;
         await withPending(
-            row.id,
-            () => cancelMutation.mutateAsync({ mailboxId: mailbox.id, id: row.id }),
+            row,
+            (mailboxId) => cancelMutation.mutateAsync({ mailboxId, id: row.id }),
             t("Import cancelled and messages deleted."),
         );
     };
@@ -301,7 +297,7 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
                 const reasons = row.failure_reasons;
                 // Breakdown as a native title (one "reason: count" per line) — a
                 // hover tooltip that stays reliable across the grid's frequent
-                // (2s-poll) re-renders.
+                // (polling) re-renders.
                 const breakdown =
                     reasons && Object.keys(reasons).length > 0
                         ? Object.entries(reasons)
@@ -368,12 +364,29 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
         );
     };
 
-    const columns: Column<ImportRun>[] = [
+    const columns: Column<TRow>[] = [
+        ...leadingColumns,
         {
             id: "type",
             headerName: t("Type"),
             size: 110,
-            renderCell: ({ row }) => <span>{(row.source_type ?? "").toUpperCase()}</span>,
+            renderCell: ({ row }) => (
+                <div className="import-type">
+                    <span>{(row.source_type ?? "").toUpperCase()}</span>
+                    {isContinuous(row) && (
+                        <Badge
+                            className="import-type__continuous"
+                            color="info"
+                            variant="secondary"
+                            compact
+                            title={t("Keeps importing the new messages of the account")}
+                        >
+                            <Icon name="autorenew" size={12} />
+                            {t("Continuous")}
+                        </Badge>
+                    )}
+                </div>
+            ),
         },
         {
             id: "status",
@@ -384,7 +397,7 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
             id: "actions",
             headerName: "",
             size: 60,
-            renderCell: ({ row }) => (
+            renderCell: ({ row }) => row.mailbox ? (
                 <RowActions
                     row={row}
                     pending={pendingIds.has(row.id)}
@@ -396,7 +409,7 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
                     onForget={handleForget}
                     onCancel={handleCancel}
                 />
-            ),
+            ) : null,
         },
     ];
 
@@ -407,7 +420,7 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
             </div>
         );
     }
-    if (error) {
+    if (isError) {
         return (
             <div className="admin-data-grid">
                 <Banner type="error">{t("Error while loading imports")}</Banner>
@@ -419,11 +432,45 @@ export const ImportsDataGrid = ({ mailbox }: ImportsDataGridProps) => {
         <div className="admin-data-grid">
             <DataGrid
                 columns={columns}
-                rows={rows}
+                rows={visibleRows}
+                pagination={pagination}
                 onSortModelChange={() => undefined}
                 enableSorting={false}
-                emptyPlaceholderLabel={t("No imports yet")}
+                emptyPlaceholderLabel={emptyPlaceholderLabel ?? t("No imports yet")}
             />
         </div>
+    );
+};
+
+type MailboxImportsDataGridProps = {
+    mailboxId: string;
+};
+
+/** Every import of one mailbox, kept live while one of them progresses. */
+export const MailboxImportsDataGrid = ({ mailboxId }: MailboxImportsDataGridProps) => {
+    const queryClient = useQueryClient();
+    const { data, isLoading, error } = useMailboxesImportsList(mailboxId, {
+        query: {
+            enabled: !!mailboxId,
+            refetchInterval: (query) =>
+                importsRefetchInterval(query.state.data?.data as ImportRun[] | undefined),
+        },
+        // Background status poll: let foreground requests win the wire.
+        request: { priority: "low" },
+    });
+
+    const invalidate = () =>
+        queryClient.invalidateQueries({
+            queryKey: getMailboxesImportsListQueryKey(mailboxId),
+            exact: false,
+        });
+
+    return (
+        <ImportsDataGrid
+            rows={(data?.data as ImportRun[] | undefined) ?? []}
+            isLoading={isLoading}
+            isError={!!error}
+            onRowChange={invalidate}
+        />
     );
 };

@@ -1,5 +1,6 @@
 """Permission handlers for the messages core app."""
 
+from django.conf import settings
 from django.core import exceptions
 
 from rest_framework import permissions
@@ -18,6 +19,17 @@ class DenyAll(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return False
+
+
+class IsImportEnabled(permissions.BasePermission):
+    """Denies every import endpoint while ``FEATURE_IMPORT_MESSAGES`` is off.
+
+    The flag also drives the ``import_messages`` abilities that hide the UI,
+    but hiding the UI is not enough: the API must refuse the calls too.
+    """
+
+    def has_permission(self, request, view):
+        return settings.FEATURE_IMPORT_MESSAGES
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -342,7 +354,8 @@ class IsMailboxAdmin(permissions.BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
-        # obj is a MailboxAccess instance.
+        # obj is any instance bound to the URL mailbox through a ``mailbox``
+        # FK: a MailboxAccess, or an import run Channel.
         if not request.user or not request.user.is_authenticated:
             return False
 

@@ -1,4 +1,5 @@
-"""The imports API: one mailbox-nested viewset for the import-run resource.
+"""The imports API: a mailbox-nested viewset for the import-run resource,
+plus a read-only list of every run of a mail domain for its admins.
 
 ``POST /mailboxes/{id}/imports/`` starts an import (file or IMAP);
 ``GET .../imports/`` + ``GET .../imports/{id}/`` read run state
@@ -10,15 +11,21 @@ its messages. An import run is a ``Channel`` with ``type=import`` grouping
 every message the run created.
 ``MessagesArchiveUploadViewSet`` is the S3 upload helper a file import uses
 before ``POST .../imports/``.
+``GET /maildomains/{id}/imports/`` lists the runs of every mailbox of a domain,
+and ``GET .../imports/stats/`` counts them per status; acting on one of them
+goes through its mailbox-nested route.
 """
 
 from django.core.files.storage import storages
+from django.db.models import Count, Q
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.functional import cached_property
 
 from botocore.exceptions import ClientError
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
+    OpenApiParameter,
     OpenApiResponse,
     extend_schema,
 )
@@ -45,6 +52,8 @@ from core.services.importer.tasks import cancel_import_task, run_import_task
 
 from .. import permissions
 from ..serializers import (
+    AdminImportRunSerializer,
+    AdminImportStatsSerializer,
     ImportCreateSerializer,
     ImportFileUploadAbortSerializer,
     ImportFileUploadCompleteSerializer,
@@ -67,6 +76,20 @@ def _require_owned_file_key(user_id, file_key: str) -> str:
     return file_key
 
 
+def _import_runs(**filters):
+    """Import runs matching ``filters``, most recently active first.
+
+    ``last_used_at`` is the run's heartbeat (advanced while it works and on
+    every continuous poll); a never-dispatched run falls back to its creation
+    time, so a just-created import still sorts on top.
+    """
+    return (
+        models.Channel.objects.filter(type=enums.ChannelTypes.IMPORT.value, **filters)
+        .annotate(last_activity=Coalesce("last_used_at", "created_at"))
+        .order_by("-last_activity")
+    )
+
+
 @extend_schema(tags=["import"])
 class ImportViewSet(
     mixins.ListModelMixin,
@@ -80,7 +103,7 @@ class ImportViewSet(
     ``import_messages`` ability that gates the UI).
     """
 
-    permission_classes = [permissions.IsMailboxAdmin]
+    permission_classes = [permissions.IsImportEnabled, permissions.IsMailboxAdmin]
     serializer_class = ImportRunSerializer
     pagination_class = None
 
@@ -97,21 +120,8 @@ class ImportViewSet(
         return ImportRunSerializer
 
     def get_queryset(self):
-        """Import runs for this mailbox, most recently active first.
-
-        ``last_used_at`` is the run's heartbeat (advanced while it works and on
-        every continuous poll); a never-dispatched run falls back to its
-        creation time, so a just-created import still sorts on top.
-        """
-        return (
-            models.Channel.objects.filter(
-                type=enums.ChannelTypes.IMPORT.value,
-                mailbox=self.mailbox,
-            )
-            .select_related("mailbox")
-            .annotate(last_activity=Coalesce("last_used_at", "created_at"))
-            .order_by("-last_activity")
-        )
+        """Import runs for this mailbox, most recently active first."""
+        return _import_runs(mailbox=self.mailbox).select_related("mailbox")
 
     @extend_schema(
         request=ImportCreateSerializer,
@@ -304,7 +314,7 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
     ``create_bucket`` (see docs/imports.md).
     """
 
-    permission_classes = [permissions.IsMailboxAdmin]
+    permission_classes = [permissions.IsImportEnabled, permissions.IsMailboxAdmin]
     storage = storages["message-imports"]
     lookup_url_kwarg = "upload_id"
     lookup_field = "upload_id"
@@ -430,3 +440,109 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
             if code not in ("NoSuchUpload", "NotFound", "404"):
                 raise
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+_FAILED_IMPORT = Q(settings__import__status=enums.ImportStatus.FAILED.value)
+
+# The statuses a domain admin filters the imports by. Each listed run falls in
+# exactly one. They are matched on durable state: a live "running" only exists
+# in Redis, the snapshot keeps reading "pending" (or the last pass's
+# "completed" for a continuous poller) until the run ends.
+IMPORT_LIST_STATUSES = {
+    # Working through its source, or a continuous poller between two passes.
+    "in_progress": Q(is_active=True) & ~_FAILED_IMPORT,
+    "failed": _FAILED_IMPORT,
+    # A one-shot run that ended, or a continuous poller whose polling is paused.
+    "completed": Q(is_active=False) & ~_FAILED_IMPORT,
+}
+
+
+@extend_schema(tags=["import"])
+class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """List and count the import runs of every mailbox of a mail domain.
+
+    Lets domain admins follow imports without being admins of each mailbox.
+    Read-only: starting or managing a run goes through the mailbox-nested
+    ``ImportViewSet``, whose ``IsMailboxAdmin`` already lets domain admins in.
+    """
+
+    permission_classes = [
+        permissions.IsImportEnabled,
+        permissions.IsSuperUser | permissions.IsMailDomainAdmin,
+    ]
+    serializer_class = AdminImportRunSerializer
+
+    def _domain_runs(self):
+        """Every import run of the domain an admin may see."""
+        return _import_runs(mailbox__domain_id=self.kwargs["maildomain_pk"]).exclude(
+            # A cancelled run is being purged, and its row deleted right after.
+            settings__import__status=enums.ImportStatus.CANCELLED.value
+        )
+
+    def get_queryset(self):
+        """The domain's import runs, filtered by ``status`` and ``q``."""
+        statuses = set(self.request.query_params.getlist("status"))
+        unknown = statuses - IMPORT_LIST_STATUSES.keys()
+        if unknown:
+            raise ValidationError(
+                {"status": f"Expected any of {', '.join(IMPORT_LIST_STATUSES)}."}
+            )
+
+        queryset = self._domain_runs().select_related(
+            "mailbox__domain", "mailbox__contact", "user"
+        )
+        if statuses:
+            matching = Q()
+            for name in statuses:
+                matching |= IMPORT_LIST_STATUSES[name]
+            queryset = queryset.filter(matching)
+
+        search = (self.request.query_params.get("q") or "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(mailbox__local_part__icontains=search)
+                | Q(mailbox__contact__name__icontains=search)
+            )
+        return queryset
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="status",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                enum=list(IMPORT_LIST_STATUSES),
+                many=True,
+                description=(
+                    "Keep the imports in any of these statuses: `in_progress` "
+                    "(running, or polling for new messages), `failed`, "
+                    "`completed` (finished, or polling paused). Every status "
+                    "when omitted."
+                ),
+            ),
+            OpenApiParameter(
+                name="q",
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.QUERY,
+                description=(
+                    "Filter imports whose mailbox local part or contact name "
+                    "contains this value (case-insensitive)."
+                ),
+            ),
+        ],
+    )
+    def list(self, request, *args, **kwargs):
+        """List the domain's import runs, most recently active first."""
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(responses=AdminImportStatsSerializer)
+    @action(detail=False, methods=["get"])
+    def stats(self, request, *args, **kwargs):
+        """Count the domain's import runs in each status, in one query."""
+        counts = self._domain_runs().aggregate(
+            **{
+                name: Count("id", filter=matching)
+                for name, matching in IMPORT_LIST_STATUSES.items()
+            }
+        )
+        return Response(AdminImportStatsSerializer(counts).data)

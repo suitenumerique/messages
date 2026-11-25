@@ -5,6 +5,8 @@ type ImportNewViewProps = {
   mailboxId: string;
   /** The import run was created and is now processing — return to the list. */
   onStarted: () => void;
+  /** Whether an archive is being uploaded: unmounting the view aborts it. */
+  onUploadingChange?: (isUploading: boolean) => void;
 };
 
 /**
@@ -14,11 +16,16 @@ type ImportNewViewProps = {
  * server-side progress and cancellation. The "back to imports" affordance and the
  * heading live in the settings tab title (see ImportNewTitle), above the form.
  */
-export const ImportNewView = ({ mailboxId, onStarted }: ImportNewViewProps) => {
+export const ImportNewView = ({ mailboxId, onStarted, onUploadingChange }: ImportNewViewProps) => {
   // Drives StepForm's heading and the archive progress overlay (idle → uploading);
   // on success `onStarted` hands off to the list.
   const [step, setStep] = useState<ImporterFormStep>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const changeStep = (nextStep: ImporterFormStep) => {
+    setStep(nextStep);
+    onUploadingChange?.(nextStep === "uploading");
+  };
 
   return (
     <div className="import-new-view">
@@ -28,12 +35,15 @@ export const ImportNewView = ({ mailboxId, onStarted }: ImportNewViewProps) => {
         error={error}
         onUploading={() => {
           setError(null);
-          setStep("uploading");
+          changeStep("uploading");
         }}
         // The run exists and is processing server-side; the list takes over.
-        onSuccess={onStarted}
+        onSuccess={() => {
+          changeStep("idle");
+          onStarted();
+        }}
         onError={(message) => {
-          setStep("idle");
+          changeStep("idle");
           setError(message);
         }}
       />

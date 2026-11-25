@@ -221,6 +221,19 @@ class TestImportViewSetPermissions:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_api_messages_archive_create_upload_denied_when_feature_disabled(
+        self, api_client, mailbox, settings
+    ):
+        """With imports disabled, no presigned write into the imports bucket
+        can be minted, even by a mailbox admin."""
+        settings.FEATURE_IMPORT_MESSAGES = False
+        response = api_client.post(
+            _upload_list_url(mailbox),
+            {"filename": "test.eml", "content_type": "message/rfc822"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
 
 class TestMessagesArchiveUploadViewSet:
     """Test the create action for direct and multipart uploads."""

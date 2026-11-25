@@ -2529,6 +2529,32 @@ class ImportRunSerializer(serializers.ModelSerializer):
         return self._run(obj).get("finished_at")
 
 
+class AdminImportRunSerializer(ImportRunSerializer):
+    """An import run listed among every import of a mail domain.
+
+    A domain-wide list mixes mailboxes and launchers, so each row also says
+    which mailbox it fills and who started it. ``mailbox`` stays the bare id:
+    acting on the run goes through ``/mailboxes/{mailbox}/imports/{id}/``.
+    """
+
+    mailbox_details = MailboxLightSerializer(source="mailbox", read_only=True)
+    created_by = UserWithoutAbilitiesSerializer(
+        source="user", read_only=True, allow_null=True
+    )
+
+    class Meta(ImportRunSerializer.Meta):
+        fields = [*ImportRunSerializer.Meta.fields, "mailbox_details", "created_by"]
+        read_only_fields = fields
+
+
+class AdminImportStatsSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """How many import runs of a mail domain are in each list status."""
+
+    in_progress = serializers.IntegerField(read_only=True)
+    failed = serializers.IntegerField(read_only=True)
+    completed = serializers.IntegerField(read_only=True)
+
+
 class ImportUpdateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Body of ``PATCH /mailboxes/{id}/imports/{id}/`` — change how a run runs.
 

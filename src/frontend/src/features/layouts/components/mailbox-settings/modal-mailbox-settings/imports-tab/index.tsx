@@ -10,7 +10,7 @@ import {
 import { Icon } from "@/features/ui/components/icon";
 import { Plus } from "@gouvfr-lasuite/ui-components/icons";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
-import { ImportsDataGrid } from "../../imports-view/imports-data-grid";
+import { MailboxImportsDataGrid } from "../../imports-view/imports-data-grid";
 import { ImportNewView } from "../../imports-view/import-new-view";
 import { ResourceSectionHeader } from "../resource-section-header";
 
@@ -90,7 +90,7 @@ export const MailboxSettingsImportsTab = ({
             </Button>
           }
         />
-        <ImportsDataGrid mailbox={mailbox} />
+        <MailboxImportsDataGrid mailboxId={mailbox.id} />
       </section>
     </div>
   );

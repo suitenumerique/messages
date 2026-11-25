@@ -19,7 +19,11 @@ from core.api.viewsets.draft import DraftMessageView
 from core.api.viewsets.drive import DriveAPIView
 from core.api.viewsets.flag import ChangeFlagView
 from core.api.viewsets.image_proxy import ImageProxyViewSet
-from core.api.viewsets.imports import ImportViewSet, MessagesArchiveUploadViewSet
+from core.api.viewsets.imports import (
+    AdminMailDomainImportViewSet,
+    ImportViewSet,
+    MessagesArchiveUploadViewSet,
+)
 from core.api.viewsets.inbound.mta import InboundMTAViewSet
 from core.api.viewsets.inbound.widget import InboundWidgetViewSet
 from core.api.viewsets.label import LabelViewSet
@@ -106,6 +110,10 @@ maildomain_nested_router.register(
 # Register /maildomains/{maildomain_pk}/accesses/
 maildomain_nested_router.register(
     r"accesses", MaildomainAccessViewSet, basename="admin-maildomains-access"
+)
+# Register /maildomains/{maildomain_pk}/imports/
+maildomain_nested_router.register(
+    r"imports", AdminMailDomainImportViewSet, basename="admin-maildomains-imports"
 )
 
 # Router for /inbound/

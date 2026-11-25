@@ -1,0 +1,41 @@
+// Domain imports list: the status filter sits under the search, and each run
+// names its mailbox above who started it.
+.admin-imports {
+    &__toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: var(--c--globals--spacings--sm);
+    }
+
+    // Sized to its label, not stretched to the search width.
+    &__status-filter {
+        align-self: flex-end;
+    }
+
+    &__tab-label {
+        display: flex;
+        align-items: center;
+        gap: var(--c--globals--spacings--3xs);
+    }
+
+    &__failed-badge {
+        align-items: center;
+        gap: var(--c--globals--spacings--4xs);
+    }
+
+    &__mailbox {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        strong {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+
+    &__launcher {
+        font-size: 10px;
+        color: var(--c--contextuals--content--semantic--neutral--tertiary);
+    }
+}

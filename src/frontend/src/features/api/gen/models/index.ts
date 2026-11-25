@@ -6,6 +6,10 @@
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
 
+export * from "./admin_import_run";
+export * from "./admin_import_run_created_by";
+export * from "./admin_import_run_failure_reasons";
+export * from "./admin_import_stats";
 export * from "./attachment";
 export * from "./blob_upload_create201";
 export * from "./blob_upload_create_body";
@@ -136,6 +140,8 @@ export * from "./mailboxes_search_list_params";
 export * from "./maildomain_access_read";
 export * from "./maildomain_access_write";
 export * from "./maildomain_access_write_request";
+export * from "./maildomains_imports_list_params";
+export * from "./maildomains_imports_list_status_item";
 export * from "./maildomains_list_params";
 export * from "./maildomains_mailboxes_list_params";
 export * from "./maildomains_message_templates_list_params";
@@ -157,6 +163,7 @@ export * from "./message_template_request_metadata";
 export * from "./message_template_type_choices";
 export * from "./messages_delivery_statuses_partial_update_body_one";
 export * from "./mode_enum";
+export * from "./paginated_admin_import_run_list";
 export * from "./paginated_drive_item_response";
 export * from "./paginated_mail_domain_admin_list";
 export * from "./paginated_mailbox_access_read_list";
