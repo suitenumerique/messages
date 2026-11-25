@@ -12,6 +12,7 @@ import {
     useMailboxesImportsPartialUpdate,
     getMailboxesImportsListQueryKey,
 } from "@/features/api/gen";
+import { Badge } from "@/features/ui/components/badge";
 import { Banner } from "@/features/ui/components/banner";
 import ProgressBar from "@/features/ui/components/progress-bar";
 import { addToast, ToasterItem } from "@/features/ui/components/toaster";
@@ -369,7 +370,23 @@ export const ImportsDataGrid = <TRow extends ImportRun>({
             id: "type",
             headerName: t("Type"),
             size: 110,
-            renderCell: ({ row }) => <span>{(row.source_type ?? "").toUpperCase()}</span>,
+            renderCell: ({ row }) => (
+                <div className="import-type">
+                    <span>{(row.source_type ?? "").toUpperCase()}</span>
+                    {isContinuous(row) && (
+                        <Badge
+                            className="import-type__continuous"
+                            color="info"
+                            variant="secondary"
+                            compact
+                            title={t("Keeps importing the new messages of the account")}
+                        >
+                            <Icon name="autorenew" size={12} />
+                            {t("Continuous")}
+                        </Badge>
+                    )}
+                </div>
+            ),
         },
         {
             id: "status",

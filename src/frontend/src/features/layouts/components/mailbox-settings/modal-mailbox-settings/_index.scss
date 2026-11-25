@@ -440,6 +440,18 @@
   }
 }
 
+// The source of a run, flagged when it keeps polling for new messages.
+.import-type {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--c--globals--spacings--4xs);
+
+  &__continuous {
+    gap: var(--c--globals--spacings--4xs);
+  }
+}
+
 .import-status-line {
   display: flex;
   align-items: center;
