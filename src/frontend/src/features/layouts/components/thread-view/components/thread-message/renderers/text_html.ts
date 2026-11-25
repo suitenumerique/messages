@@ -6,7 +6,9 @@
  */
 
 import DomPurify from "dompurify";
-import { getFirstSrcsetUrl, parseDimension } from "./utils";
+import { getFirstSrcsetUrl, parseDimension, XLINK_NAMESPACE } from "./utils";
+
+const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
 
 /** Options for handling external images. */
 export type ExternalImageOptions = {
@@ -37,12 +39,18 @@ export function renderTextHtml(
     const domPurify = DomPurify();
 
     domPurify.addHook("afterSanitizeAttributes", function (node) {
-        // Open external links in new tabs with safe rel attributes
-        if (node.tagName === "A") {
-            if (!node.getAttribute("href")?.startsWith("#")) {
-                node.setAttribute("target", "_blank");
-            }
+        // Every link, an HTML or SVG anchor or an image map area, opens in a new
+        // tab with safe rel attributes: the message cannot pick its target.
+        if (node.localName === "a" || node.localName === "area") {
+            node.setAttribute("target", "_blank");
             node.setAttribute("rel", "noopener noreferrer");
+        }
+
+        // Firefox and Safari follow the href of any MathML element by navigating
+        // the frame itself, whatever the target: MathML keeps no link.
+        if (node.namespaceURI === MATHML_NAMESPACE) {
+            node.removeAttribute("href");
+            node.removeAttributeNS(XLINK_NAMESPACE, "href");
         }
 
         // Handle images: pixel tracker removal, CID resolution, external image handling
@@ -122,6 +130,5 @@ export function renderTextHtml(
         // <source> is forbidden so a <picture> always renders its <img> fallback,
         // whose src goes through the CID resolution and the image proxy.
         FORBID_TAGS: ["script", "object", "iframe", "embed", "audio", "video", "source"],
-        ADD_ATTR: ["target", "rel"],
     });
 }

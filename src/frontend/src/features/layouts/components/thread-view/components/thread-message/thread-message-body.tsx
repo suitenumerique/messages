@@ -16,7 +16,12 @@ import { EXTERNAL_IMAGES_CONSENT_KEY } from "@/features/config/constants";
 import { handle } from "@/features/utils/errors";
 import { renderBodyParts } from "./renderers";
 import { linkifyHtml } from "./renderers/linkify";
-import { mayHaveViewportHeightLengths, removeViewportHeightLengths } from "./renderers/utils";
+import {
+    findAnchorTarget,
+    findFollowedLink,
+    mayHaveViewportHeightLengths,
+    removeViewportHeightLengths,
+} from "./renderers/utils";
 import { isHostTrusted } from "./is-host-trusted";
 import { useLinkConfirmation } from "./use-link-confirmation";
 import { ThreadMessageBodyProps } from "./types";
@@ -372,34 +377,67 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
     const isIframeLoadedRef = useRef(false);
 
     const resizeIframe = useCallback(() => {
-        if (iframeRef.current?.contentWindow?.document.documentElement) {
-            const height = iframeRef.current.contentWindow.document.documentElement.getBoundingClientRect().height;
+        // `contentDocument` is null for a page of another origin, where
+        // `contentWindow.document` would throw.
+        const root = iframeRef.current?.contentDocument?.documentElement;
+        if (iframeRef.current && root) {
+            const height = root.getBoundingClientRect().height;
             // Round up: Safari shows a scrollbar for a sub-pixel overflow.
             iframeRef.current.style.height = `${Math.ceil(height)}px`;
+        }
+    }, []);
+
+    // Scroll the thread to an in-page anchor of the message, or to the top of
+    // the message for an empty fragment or `#top`, as browsers do.
+    const scrollToAnchor = useCallback((fragment: string) => {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc) {
+            return;
+        }
+        const anchorTarget = findAnchorTarget(doc, fragment);
+        if (anchorTarget) {
+            anchorTarget.scrollIntoView({ block: 'start' });
+        } else if (fragment === '' || fragment.toLowerCase() === 'top') {
+            iframeRef.current?.scrollIntoView({ block: 'start' });
         }
     }, []);
 
     // Delegated handler for link activations inside the iframe (mouse click,
     // keyboard activation and middle click through the auxclick event).
     const handleLinkActivation = useCallback((event: MouseEvent) => {
-        const target = event.target as Element | null;
-        const link = target?.closest?.('a[href]') as HTMLAnchorElement | null;
-        if (!link) {
+        const followedLink = findFollowedLink(event.target as Element | null);
+        if (!followedLink) {
             return;
         }
-
-        // In-page anchors are safe and stay within the iframe
-        if (link.getAttribute('href')?.startsWith('#')) {
-            return;
-        }
+        const { link, href } = followedLink;
 
         if (areLinksDisabledRef.current) {
             event.preventDefault();
             return;
         }
 
+        // In-page anchors: the message document has no URL of its own, so the
+        // browser would resolve them against the app URL and open the app in a
+        // new tab. The thread is scrolled to the anchor instead.
+        if (href.startsWith('#')) {
+            event.preventDefault();
+            if (event.type === 'click') {
+                scrollToAnchor(href.slice(1));
+            }
+            return;
+        }
+
+        let url: URL;
+        try {
+            url = new URL(href, link.baseURI);
+        } catch {
+            // A link the browser cannot resolve is never followed.
+            event.preventDefault();
+            return;
+        }
+
         // Let other protocols (mailto:, tel:, ...) follow their default behavior
-        if (!/^https?:/i.test(link.href)) {
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
             return;
         }
 
@@ -409,71 +447,82 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
             return;
         }
 
-        const url = link.href;
-        const isMasked = isLinkMasked(url, link.textContent ?? '');
+        const isMasked = isLinkMasked(url.href, link.textContent ?? '');
         // Trusted domains skip the confirmation, unless the link is masked: a
         // masked link is exactly the phishing case the confirmation exists for.
-        if (!isMasked && isHostTrusted(new URL(url).hostname, trustedLinkDomains)) {
-            window.open(url, '_blank', 'noopener,noreferrer');
+        if (!isMasked && isHostTrusted(url.hostname, trustedLinkDomains)) {
+            window.open(url.href, '_blank', 'noopener,noreferrer');
             return;
         }
-        void confirmLinkOpening(url, isMasked).then((confirmed) => {
+        void confirmLinkOpening(url.href, isMasked).then((confirmed) => {
             if (confirmed) {
-                window.open(url, '_blank', 'noopener,noreferrer');
+                window.open(url.href, '_blank', 'noopener,noreferrer');
             }
         });
-    }, [confirmLinkOpening, trustedLinkDomains]);
+    }, [confirmLinkOpening, trustedLinkDomains, scrollToAnchor]);
 
     const handleIframeLoad = useCallback(() => {
         try {
             resizeObserverRef.current?.disconnect();
-            if (iframeRef.current?.contentWindow?.document) {
-                const doc = iframeRef.current.contentWindow.document;
-                isIframeLoadedRef.current = true;
-
-                // Intercept link activations to reveal the real target before
-                // opening it. Done first, so that no step below can leave the
-                // links of a message unchecked.
-                doc.addEventListener('click', handleLinkActivation);
-                doc.addEventListener('auxclick', handleLinkActivation);
-
-                try {
-                    if (mayHaveViewportHeightLengths(sanitizedHtmlBody)) {
-                        removeViewportHeightLengths(doc);
-                    }
-                } catch (error) {
-                    // Best effort: a message keeping its viewport sizes only
-                    // overflows its iframe, it must still be sized and shown.
-                    handle(new Error("Failed to drop the viewport sizes of a message."), { extra: { error } });
-                }
-                // Sized synchronously so the height is right when onLoad fires.
-                resizeIframe();
-
-                // Follow what changes the content height: reflows when the iframe
-                // width changes and the content change events. Never the size of
-                // the root element itself: an email style may still depend on the
-                // iframe viewport (e.g. a `@media (max-height)` query), so every
-                // new iframe height could change it again and loop.
-                let observedWidth: number | null = null;
-                resizeObserverRef.current = new ResizeObserver(([entry]) => {
-                    if (entry.contentRect.width === observedWidth) {
-                        return;
-                    }
-                    observedWidth = entry.contentRect.width;
-                    // Next frame: resizing the observed iframe within its own
-                    // notification makes the browser report a ResizeObserver
-                    // loop error.
-                    requestAnimationFrame(resizeIframe);
-                });
-                resizeObserverRef.current.observe(iframeRef.current);
-                CONTENT_CHANGE_EVENTS.forEach((type) => doc.addEventListener(type, resizeIframe, true));
+            const iframe = iframeRef.current;
+            // Null for a page of another origin, which cannot even be read.
+            const doc = iframe?.contentDocument;
+            // The initial empty document of the iframe: the message loads next.
+            if (!iframe || doc?.URL === 'about:blank') {
+                return;
             }
+            if (doc?.URL !== 'about:srcdoc') {
+                // The frame left the message: a link navigated it in place, as
+                // MathML links do in Firefox and Safari. Put the message back
+                // rather than show a page out of reach of every check above.
+                handle(new Error("The message frame navigated away from the message."));
+                iframe.srcdoc = wrappedHtml;
+                return;
+            }
+            isIframeLoadedRef.current = true;
+
+            // Intercept link activations to reveal the real target before
+            // opening it. Done first, so that no step below can leave the
+            // links of a message unchecked.
+            doc.addEventListener('click', handleLinkActivation);
+            doc.addEventListener('auxclick', handleLinkActivation);
+
+            try {
+                if (mayHaveViewportHeightLengths(sanitizedHtmlBody)) {
+                    removeViewportHeightLengths(doc);
+                }
+            } catch (error) {
+                // Best effort: a message keeping its viewport sizes only
+                // overflows its iframe, it must still be sized and shown.
+                handle(new Error("Failed to drop the viewport sizes of a message."), { extra: { error } });
+            }
+            // Sized synchronously so the height is right when onLoad fires.
+            resizeIframe();
+
+            // Follow what changes the content height: reflows when the iframe
+            // width changes and the content change events. Never the size of
+            // the root element itself: an email style may still depend on the
+            // iframe viewport (e.g. a `@media (max-height)` query), so every
+            // new iframe height could change it again and loop.
+            let observedWidth: number | null = null;
+            resizeObserverRef.current = new ResizeObserver(([entry]) => {
+                if (entry.contentRect.width === observedWidth) {
+                    return;
+                }
+                observedWidth = entry.contentRect.width;
+                // Next frame: resizing the observed iframe within its own
+                // notification makes the browser report a ResizeObserver
+                // loop error.
+                requestAnimationFrame(resizeIframe);
+            });
+            resizeObserverRef.current.observe(iframe);
+            CONTENT_CHANGE_EVENTS.forEach((type) => doc.addEventListener(type, resizeIframe, true));
         } finally {
             // The message stays behind its loader until onLoad runs: whatever
             // fails above must not keep it hidden. The error still propagates.
             onLoad?.();
         }
-    }, [onLoad, resizeIframe, handleLinkActivation, sanitizedHtmlBody]);
+    }, [onLoad, resizeIframe, handleLinkActivation, sanitizedHtmlBody, wrappedHtml]);
 
     // A message rendered folded was measured with a 0px high iframe viewport: a
     // style depending on the viewport height (e.g. a `@media (orientation)`
@@ -513,7 +562,7 @@ const ThreadMessageBody = ({ bodyParts, attachments = [], isHidden = false, areL
                 ref={iframeRef}
                 className="thread-message__body"
                 srcDoc={wrappedHtml}
-                sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+                sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                 onLoad={handleIframeLoad}
             />
         </>

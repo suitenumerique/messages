@@ -1,5 +1,11 @@
 import { afterEach, describe, it, expect } from "vitest";
-import { getFirstSrcsetUrl, mayHaveViewportHeightLengths, removeViewportHeightLengths } from "./utils";
+import {
+  findAnchorTarget,
+  findFollowedLink,
+  getFirstSrcsetUrl,
+  mayHaveViewportHeightLengths,
+  removeViewportHeightLengths,
+} from "./utils";
 
 describe("getFirstSrcsetUrl", () => {
   it.each([
@@ -123,5 +129,69 @@ describe("mayHaveViewportHeightLengths", () => {
     "",
   ])("finds no viewport height length in %j", (html) => {
     expect(mayHaveViewportHeightLengths(html)).toBe(false);
+  });
+});
+
+describe("findAnchorTarget", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("finds the element with the fragment as id before a named anchor", () => {
+    document.body.innerHTML = '<a name="part">named</a><h2 id="part">by id</h2>';
+    expect(findAnchorTarget(document, "part")?.textContent).toBe("by id");
+  });
+
+  it("finds a named anchor, but no other named element", () => {
+    document.body.innerHTML = '<input name="part"><a name="part">named</a>';
+    expect(findAnchorTarget(document, "part")?.localName).toBe("a");
+  });
+
+  it("decodes the fragment", () => {
+    document.body.innerHTML = '<h2 id="été 2026">x</h2>';
+    expect(findAnchorTarget(document, "%C3%A9t%C3%A9%202026")?.id).toBe("été 2026");
+  });
+
+  it("finds nothing for a missing or malformed fragment", () => {
+    document.body.innerHTML = '<h2 id="part">x</h2>';
+    expect(findAnchorTarget(document, "other")).toBeNull();
+    expect(findAnchorTarget(document, "%E0%A4%A")).toBeNull();
+  });
+});
+
+describe("findFollowedLink", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it.each([
+    ["a table cell", '<a href="https://evil.example"><table><tr><td><a id="inner">Verify</a></td></tr></table></a>'],
+    ["an SVG image", '<a href="https://evil.example"><svg><a><text id="inner">Verify</text></a></svg></a>'],
+  ])("skips an anchor without target URL nested in %s", (_label, html) => {
+    document.body.innerHTML = html;
+    const followedLink = findFollowedLink(document.getElementById("inner"));
+    expect(followedLink?.link.localName).toBe("a");
+    expect(followedLink?.href).toBe("https://evil.example");
+  });
+
+  it("finds an SVG anchor with a legacy xlink:href", () => {
+    document.body.innerHTML = '<svg><a xlink:href="https://evil.example"><text id="inner">x</text></a></svg>';
+    expect(findFollowedLink(document.getElementById("inner"))?.href).toBe("https://evil.example");
+  });
+
+  it("finds an image map area", () => {
+    document.body.innerHTML = '<map name="m"><area id="area" shape="default" href="https://evil.example"></map>';
+    expect(findFollowedLink(document.getElementById("area"))?.href).toBe("https://evil.example");
+  });
+
+  it("keeps an empty target URL, which still leads somewhere", () => {
+    document.body.innerHTML = '<a id="empty" href="">x</a>';
+    expect(findFollowedLink(document.getElementById("empty"))?.href).toBe("");
+  });
+
+  it("finds nothing outside of a link", () => {
+    document.body.innerHTML = '<p><a name="part"><span id="inner">x</span></a></p>';
+    expect(findFollowedLink(document.getElementById("inner"))).toBeNull();
+    expect(findFollowedLink(null)).toBeNull();
   });
 });

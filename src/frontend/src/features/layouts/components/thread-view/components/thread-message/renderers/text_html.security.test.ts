@@ -51,6 +51,30 @@ describe("layer 1 — sanitiser blocks script execution", () => {
     expect(out).toContain('target="_blank"');
   });
 
+  it.each([
+    ["an image map area", `<img src="map.png" usemap="#m" width="99" height="99"><map name="m"><area shape="default" href="https://evil.example" target="_top"></map>`],
+    ["an SVG anchor", `<svg><a href="https://evil.example" target="_top"><text>x</text></a></svg>`],
+    ["a legacy SVG anchor", `<svg><a xlink:href="https://evil.example" target="_top"><text>x</text></a></svg>`],
+    ["an in-page anchor", `<a href="#part" target="_top">x</a>`],
+  ])("opens %s in a new tab, whatever target the message sets", (_label, payload) => {
+    const out = render(payload);
+    expect(out).not.toMatch(/_top/);
+    expect(out).toContain('target="_blank"');
+    expect(out).toContain('rel="noopener noreferrer"');
+  });
+
+  it.each([
+    ["<math>", `<math href="https://evil.example"><mi>x</mi></math>`],
+    ["<mrow>", `<math><mrow href="https://evil.example"><mi>x</mi></mrow></math>`],
+    ["<mi>", `<math><mi href="https://evil.example">x</mi></math>`],
+    ["<mtext>", `<math><mtext href="https://evil.example">Verify</mtext></math>`],
+    ["<mi> with xlink:href", `<math><mi xlink:href="https://evil.example">x</mi></math>`],
+  ])("keeps a MathML %s but not its link, which would navigate the frame itself", (_label, payload) => {
+    const out = render(payload);
+    expect(out).toMatch(/<math/);
+    expect(out).not.toMatch(/href|evil\.example/);
+  });
+
   it("drops tracking pixels", () => {
     expect(render(`<img src="https://e.example/p.gif" width="1" height="1">`))
       .not.toMatch(/<img/i);
@@ -118,7 +142,7 @@ describe("layer 2 — the frame contains what the sanitiser lets through", () =>
       .toMatch(/background/i);
   });
 
-  it("the mount is a sandboxed iframe that cannot run scripts or submit forms", async () => {
+  it("the mount is a sandboxed iframe that cannot run scripts, submit forms or navigate the app", async () => {
     const src = await import("fs").then((fs) =>
       fs.readFileSync(
         "src/features/layouts/components/thread-view/components/thread-message/thread-message-body.tsx",
@@ -128,6 +152,8 @@ describe("layer 2 — the frame contains what the sanitiser lets through", () =>
     const sandbox = src.match(/sandbox="([^"]+)"/)?.[1] ?? "";
     expect(sandbox).not.toContain("allow-scripts");
     expect(sandbox).not.toContain("allow-forms");
+    // A link of the message must never replace the webmail in its own tab.
+    expect(sandbox).not.toContain("allow-top-navigation");
     expect(src).toMatch(/srcDoc=\{wrappedHtml\}/);
   });
 
