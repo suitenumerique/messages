@@ -5,7 +5,7 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import type { MaildomainsImportsListStatus } from "./maildomains_imports_list_status";
+import type { MaildomainsImportsListStatusItem } from "./maildomains_imports_list_status_item";
 
 export type MaildomainsImportsListParams = {
   /**
@@ -17,7 +17,7 @@ export type MaildomainsImportsListParams = {
    */
   q?: string;
   /**
-   * `active` (default) lists the running, polling and failed imports; `all` adds the completed and paused ones.
+   * Keep the imports in any of these statuses: `in_progress` (running, or polling for new messages), `failed`, `completed` (finished, or polling paused). Every status when omitted.
    */
-  status?: MaildomainsImportsListStatus;
+  status?: MaildomainsImportsListStatusItem[];
 };

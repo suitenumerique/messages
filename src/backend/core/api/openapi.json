@@ -4847,14 +4847,17 @@
                         "in": "query",
                         "name": "status",
                         "schema": {
-                            "type": "string",
-                            "enum": [
-                                "active",
-                                "all"
-                            ],
-                            "default": "active"
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "completed",
+                                    "failed",
+                                    "in_progress"
+                                ]
+                            }
                         },
-                        "description": "`active` (default) lists the running, polling and failed imports; `all` adds the completed and paused ones."
+                        "description": "Keep the imports in any of these statuses: `in_progress` (running, or polling for new messages), `failed`, `completed` (finished, or polling paused). Every status when omitted."
                     }
                 ],
                 "tags": [

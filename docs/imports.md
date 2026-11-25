@@ -252,11 +252,16 @@ imports without administering each mailbox. It is read-only and paginated; each
 row carries the bare `mailbox` id to act on the run through the routes above,
 plus `mailbox_details` and `created_by` for display.
 
-- `status=active` (default) keeps the runs still to watch: pending or running,
-  continuous pollers (`is_active=True`) and failed runs. It matches the durable
-  `settings["import"]` snapshot, where a running import still reads `pending`.
-  Forgetting a failed run (`DELETE`) takes it out of this view.
-- `status=all` adds the completed and paused runs.
+- `status` keeps the runs in any of the given statuses (repeat it to pick
+  several; every status when omitted). Each run has exactly one:
+  - `in_progress`: working through its source, or a continuous poller between
+    two passes (`is_active=True`);
+  - `failed`: its last run failed, even a poller resumed since, until its next
+    pass ends. Forgetting it (`DELETE`) takes it out of the list;
+  - `completed`: a one-shot run that ended, or a poller whose polling is paused.
+
+  They match durable state (`is_active` and the `settings["import"]`
+  snapshot), where a running import still reads `pending`.
 - Cancelled runs are never listed: they are being purged.
 - `q` searches the mailbox local part and contact name.
 

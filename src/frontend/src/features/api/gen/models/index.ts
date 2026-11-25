@@ -140,7 +140,7 @@ export * from "./maildomain_access_read";
 export * from "./maildomain_access_write";
 export * from "./maildomain_access_write_request";
 export * from "./maildomains_imports_list_params";
-export * from "./maildomains_imports_list_status";
+export * from "./maildomains_imports_list_status_item";
 export * from "./maildomains_list_params";
 export * from "./maildomains_mailboxes_list_params";
 export * from "./maildomains_message_templates_list_params";

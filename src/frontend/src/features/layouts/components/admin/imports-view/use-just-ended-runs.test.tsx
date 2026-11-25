@@ -1,8 +1,9 @@
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AdminImportRun } from "@/features/api/gen";
-import { useJustCompletedRuns } from "./use-just-completed-runs";
+import { AdminImportRun, MaildomainsImportsListStatusItem as ListStatus } from "@/features/api/gen";
+import { DEFAULT_IMPORT_LIST_STATUSES } from "@/hooks/import-status";
+import { useJustEndedRuns } from "./use-just-ended-runs";
 
 const fetchAPI = vi.fn();
 
@@ -31,24 +32,29 @@ const serveFinalStates = (finalRuns: Record<string, Partial<AdminImportRun> | "m
     });
 };
 
-let latest: ReturnType<typeof useJustCompletedRuns>;
-const report = (result: ReturnType<typeof useJustCompletedRuns>) => {
+let latest: ReturnType<typeof useJustEndedRuns>;
+const report = (result: ReturnType<typeof useJustEndedRuns>) => {
     latest = result;
 };
 
-const Probe = ({ rows, scopeKey, enabled }: { rows: AdminImportRun[] | undefined; scopeKey: string; enabled: boolean }) => {
-    const result = useJustCompletedRuns(rows, scopeKey, enabled);
+type ProbeProps = { rows: AdminImportRun[] | undefined; scopeKey: string; shownStatuses: ListStatus[] };
+
+const Probe = ({ rows, scopeKey, shownStatuses }: ProbeProps) => {
+    const result = useJustEndedRuns(rows, scopeKey, shownStatuses);
     useEffect(() => report(result));
     return null;
 };
 
-describe("useJustCompletedRuns", () => {
+describe("useJustEndedRuns", () => {
     let container: HTMLDivElement;
     let root: Root;
 
-    const render = async (rows: AdminImportRun[] | undefined, { scopeKey = "scope", enabled = true } = {}) => {
+    const render = async (
+        rows: AdminImportRun[] | undefined,
+        { scopeKey = "scope", shownStatuses = DEFAULT_IMPORT_LIST_STATUSES } = {},
+    ) => {
         await act(async () => {
-            root.render(<Probe rows={rows} scopeKey={scopeKey} enabled={enabled} />);
+            root.render(<Probe rows={rows} scopeKey={scopeKey} shownStatuses={shownStatuses} />);
         });
         // Let the final-state requests resolve and their result render.
         await act(async () => {
@@ -56,7 +62,7 @@ describe("useJustCompletedRuns", () => {
         });
     };
 
-    const keptIds = () => latest.completedRuns.map((kept) => kept.id);
+    const keptIds = () => latest.endedRuns.map((kept) => kept.id);
 
     beforeEach(() => {
         container = document.createElement("div");
@@ -75,9 +81,18 @@ describe("useJustCompletedRuns", () => {
         await render([run("b")]);
 
         expect(keptIds()).toEqual(["a"]);
-        expect(latest.completedRuns[0].success_count).toBe(42);
+        expect(latest.endedRuns[0].success_count).toBe(42);
         // The list fields the single-run route lacks come from the last listed row.
-        expect(latest.completedRuns[0].mailbox).toBe("mailbox-a");
+        expect(latest.endedRuns[0].mailbox).toBe("mailbox-a");
+    });
+
+    it("keeps a run that failed while the failed runs are hidden", async () => {
+        serveFinalStates({ a: { status: "failed", is_active: false } });
+
+        await render([run("a")], { shownStatuses: [ListStatus.in_progress] });
+        await render([], { shownStatuses: [ListStatus.in_progress] });
+
+        expect(keptIds()).toEqual(["a"]);
     });
 
     it("drops a run that left for any other reason", async () => {
@@ -101,11 +116,13 @@ describe("useJustCompletedRuns", () => {
         expect(fetchAPI).not.toHaveBeenCalled();
     });
 
-    it("keeps nothing while disabled", async () => {
-        await render([run("a")], { enabled: false });
-        await render([], { enabled: false });
+    it("drops a run that ended in a shown status", async () => {
+        serveFinalStates({ a: { status: "completed", is_active: false } });
+        const shownStatuses = [ListStatus.in_progress, ListStatus.completed];
 
-        expect(fetchAPI).not.toHaveBeenCalled();
+        await render([run("a")], { shownStatuses });
+        await render([], { shownStatuses });
+
         expect(keptIds()).toEqual([]);
     });
 

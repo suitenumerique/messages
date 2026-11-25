@@ -173,6 +173,13 @@ class TestAdminMailDomainImportsFilters:
         _finish(paused, enums.ImportStatus.COMPLETED.value)
         pause_import(paused)
 
+        # Resumed after a failed pass: active again, still failed until the
+        # next pass ends.
+        resumed = _make_import(mailbox, source=enums.ImportSource.IMAP)
+        enable_continuous(resumed)
+        _finish(resumed, enums.ImportStatus.FAILED.value)
+        enable_continuous(resumed)
+
         cancelled = _make_import(mailbox)
         _finish(cancelled, enums.ImportStatus.CANCELLED.value)
 
@@ -185,47 +192,53 @@ class TestAdminMailDomainImportsFilters:
                 "completed": completed,
                 "polling": polling,
                 "paused": paused,
+                "resumed": resumed,
                 "cancelled": cancelled,
             }.items()
         }
 
-    def test_default_lists_running_polling_and_failed_imports(
-        self, api_client, domain, runs
-    ):
-        response = api_client.get(_list_url(domain))
-
-        assert response.status_code == status.HTTP_200_OK
-        assert _ids(response) == {
-            runs["pending"],
-            runs["running"],
-            runs["failed"],
-            runs["polling"],
-        }
-
-    def test_status_active_is_the_default(self, api_client, domain, runs):
-        default = api_client.get(_list_url(domain))
-        active = api_client.get(_list_url(domain), {"status": "active"})
-
-        assert _ids(active) == _ids(default)
-
-    def test_status_all_adds_settled_imports_but_never_cancelled_ones(
+    def test_default_lists_every_import_but_cancelled_ones(
         self, api_client, domain, runs
     ):
         """A cancelled run is being purged: it is gone for the admin already."""
-        response = api_client.get(_list_url(domain), {"status": "all"})
+        response = api_client.get(_list_url(domain))
 
         assert response.status_code == status.HTTP_200_OK
-        assert _ids(response) == {
-            runs["pending"],
-            runs["running"],
-            runs["failed"],
-            runs["completed"],
-            runs["polling"],
-            runs["paused"],
-        }
+        assert _ids(response) == set(runs.values()) - {runs["cancelled"]}
+
+    @pytest.mark.parametrize(
+        ("statuses", "expected"),
+        [
+            (["in_progress"], {"pending", "running", "polling"}),
+            (["failed"], {"failed", "resumed"}),
+            (["completed"], {"completed", "paused"}),
+            (
+                ["in_progress", "failed"],
+                {"pending", "running", "polling", "failed", "resumed"},
+            ),
+        ],
+    )
+    def test_status_keeps_the_imports_in_any_of_the_given_statuses(
+        self, api_client, domain, runs, statuses, expected
+    ):
+        response = api_client.get(_list_url(domain), {"status": statuses})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert _ids(response) == {runs[name] for name in expected}
+
+    def test_every_listed_import_has_exactly_one_status(self, api_client, domain, runs):
+        by_status = [
+            _ids(api_client.get(_list_url(domain), {"status": name}))
+            for name in ("in_progress", "failed", "completed")
+        ]
+
+        listed = _ids(api_client.get(_list_url(domain)))
+        assert sorted(run for ids in by_status for run in ids) == sorted(listed)
 
     def test_unknown_status_is_rejected(self, api_client, domain):
-        response = api_client.get(_list_url(domain), {"status": "completed"})
+        response = api_client.get(
+            _list_url(domain), {"status": ["completed", "active"]}
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "status" in response.data

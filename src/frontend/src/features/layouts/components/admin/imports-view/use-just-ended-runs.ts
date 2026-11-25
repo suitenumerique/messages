@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { AdminImportRun, ImportRun, mailboxesImportsRetrieve } from "@/features/api/gen";
-import { isProgressing, STATUS_COMPLETED } from "@/hooks/import-status";
+import { AdminImportRun, ImportRun, MaildomainsImportsListStatusItem, mailboxesImportsRetrieve } from "@/features/api/gen";
+import { importListStatusOf, isProgressing, isTerminal, STATUS_CANCELLED } from "@/hooks/import-status";
 
 /**
- * Runs that just left the default view because they completed, with their
- * final state. Without them a run at 99% would vanish between two polls,
- * leaving the admin to guess how it ended. They stay until the admin changes
- * page, filter or search (`scopeKey`), or acts on them (`dismiss`).
+ * Runs that just left the list because they ended in a status it does not
+ * show, with their final state. Without them a run at 99% would vanish
+ * between two polls, leaving the admin to guess how it ended. They stay until
+ * the admin changes page, filter or search (`scopeKey`), or acts on them
+ * (`dismiss`).
  *
  * `rows` is undefined while the list loads or still shows the rows of the
  * previous scope: those must not be compared with the new scope's.
  */
-export const useJustCompletedRuns = (
+export const useJustEndedRuns = (
     rows: AdminImportRun[] | undefined,
     scopeKey: string,
-    enabled: boolean,
+    shownStatuses: MaildomainsImportsListStatusItem[],
 ) => {
-    const [completedRuns, setCompletedRuns] = useState<AdminImportRun[]>([]);
+    const [endedRuns, setEndedRuns] = useState<AdminImportRun[]>([]);
     const previousRowsRef = useRef<AdminImportRun[]>([]);
     const scopeKeyRef = useRef(scopeKey);
 
@@ -24,13 +25,12 @@ export const useJustCompletedRuns = (
         if (scopeKeyRef.current !== scopeKey) {
             scopeKeyRef.current = scopeKey;
             previousRowsRef.current = rows ?? [];
-            setCompletedRuns([]);
+            setEndedRuns([]);
             return;
         }
         if (!rows) return;
         const previousRows = previousRowsRef.current;
         previousRowsRef.current = rows;
-        if (!enabled) return;
 
         const currentIds = new Set(rows.map((row) => row.id));
         const vanished = previousRows.filter(
@@ -39,7 +39,7 @@ export const useJustCompletedRuns = (
         if (vanished.length === 0) return;
 
         // A vanished run may also have been cancelled, forgotten, or pushed to
-        // the next page: only a completed one is kept.
+        // the next page: only one that ended out of the shown statuses is kept.
         Promise.all(
             vanished.map(async (row) => {
                 if (!row.mailbox) return null;
@@ -51,20 +51,23 @@ export const useJustCompletedRuns = (
                 }
             }),
         ).then((runs) => {
-            const completed = runs.filter(
+            const ended = runs.filter(
                 (run): run is AdminImportRun =>
-                    run !== null && run.status === STATUS_COMPLETED && !run.is_active,
+                    run !== null &&
+                    isTerminal(run.status) &&
+                    run.status !== STATUS_CANCELLED &&
+                    !shownStatuses.includes(importListStatusOf(run)),
             );
-            if (completed.length === 0) return;
-            setCompletedRuns((previous) => [
-                ...completed,
-                ...previous.filter((run) => !completed.some(({ id }) => id === run.id)),
+            if (ended.length === 0) return;
+            setEndedRuns((previous) => [
+                ...ended,
+                ...previous.filter((run) => !ended.some(({ id }) => id === run.id)),
             ]);
         });
-    }, [rows, scopeKey, enabled]);
+    }, [rows, scopeKey, shownStatuses]);
 
     const dismiss = (id: string) =>
-        setCompletedRuns((previous) => previous.filter((run) => run.id !== id));
+        setEndedRuns((previous) => previous.filter((run) => run.id !== id));
 
-    return { completedRuns, dismiss };
+    return { endedRuns, dismiss };
 };

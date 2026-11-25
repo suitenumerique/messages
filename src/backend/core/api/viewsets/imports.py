@@ -440,20 +440,19 @@ class MessagesArchiveUploadViewSet(viewsets.ViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-IMPORTS_LIST_ACTIVE = "active"
-IMPORTS_LIST_ALL = "all"
+_FAILED_IMPORT = Q(settings__import__status=enums.ImportStatus.FAILED.value)
 
-# The runs a domain admin still has to watch: live (pending or running, or a
-# continuous poller between two passes) or failed. Matched on the durable
-# snapshot, where a running import still reads "pending": its live status only
-# lives in Redis until the run ends.
-ACTIVE_IMPORTS = Q(is_active=True) | Q(
-    settings__import__status__in=[
-        enums.ImportStatus.PENDING.value,
-        enums.ImportStatus.RUNNING.value,
-        enums.ImportStatus.FAILED.value,
-    ]
-)
+# The statuses a domain admin filters the imports by. Each listed run falls in
+# exactly one. They are matched on durable state: a live "running" only exists
+# in Redis, the snapshot keeps reading "pending" (or the last pass's
+# "completed" for a continuous poller) until the run ends.
+IMPORT_LIST_STATUSES = {
+    # Working through its source, or a continuous poller between two passes.
+    "in_progress": Q(is_active=True) & ~_FAILED_IMPORT,
+    "failed": _FAILED_IMPORT,
+    # A one-shot run that ended, or a continuous poller whose polling is paused.
+    "completed": Q(is_active=False) & ~_FAILED_IMPORT,
+}
 
 
 @extend_schema(tags=["import"])
@@ -473,10 +472,11 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
 
     def get_queryset(self):
         """The domain's import runs, filtered by ``status`` and ``q``."""
-        scope = self.request.query_params.get("status") or IMPORTS_LIST_ACTIVE
-        if scope not in (IMPORTS_LIST_ACTIVE, IMPORTS_LIST_ALL):
+        statuses = set(self.request.query_params.getlist("status"))
+        unknown = statuses - IMPORT_LIST_STATUSES.keys()
+        if unknown:
             raise ValidationError(
-                {"status": f"Expected '{IMPORTS_LIST_ACTIVE}' or '{IMPORTS_LIST_ALL}'."}
+                {"status": f"Expected any of {', '.join(IMPORT_LIST_STATUSES)}."}
             )
 
         queryset = (
@@ -485,8 +485,11 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
             .exclude(settings__import__status=enums.ImportStatus.CANCELLED.value)
             .select_related("mailbox__domain", "mailbox__contact", "user")
         )
-        if scope == IMPORTS_LIST_ACTIVE:
-            queryset = queryset.filter(ACTIVE_IMPORTS)
+        if statuses:
+            matching = Q()
+            for name in statuses:
+                matching |= IMPORT_LIST_STATUSES[name]
+            queryset = queryset.filter(matching)
 
         search = (self.request.query_params.get("q") or "").strip()
         if search:
@@ -502,11 +505,13 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
                 name="status",
                 type=OpenApiTypes.STR,
                 location=OpenApiParameter.QUERY,
-                enum=[IMPORTS_LIST_ACTIVE, IMPORTS_LIST_ALL],
-                default=IMPORTS_LIST_ACTIVE,
+                enum=list(IMPORT_LIST_STATUSES),
+                many=True,
                 description=(
-                    "`active` (default) lists the running, polling and failed "
-                    "imports; `all` adds the completed and paused ones."
+                    "Keep the imports in any of these statuses: `in_progress` "
+                    "(running, or polling for new messages), `failed`, "
+                    "`completed` (finished, or polling paused). Every status "
+                    "when omitted."
                 ),
             ),
             OpenApiParameter(

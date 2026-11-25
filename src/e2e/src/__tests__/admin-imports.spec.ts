@@ -65,9 +65,13 @@ test.describe("Maildomain imports (Admin)", () => {
     await expect(modal).toBeHidden();
 
     // A one-message archive can complete before the list first shows it, and
-    // the default view only keeps the imports still to watch: list them all.
-    await page.getByText("Show all imports").click();
-    await page.waitForURL("**/domain/*/imports?all=true");
+    // the default view only keeps the imports still to watch: list the
+    // completed ones too.
+    await page.getByRole("button", { name: "Status: In progress, Failed" }).click();
+    await page.getByRole("menuitem", { name: "Completed" }).click();
+    await page.waitForURL(
+      (url) => url.searchParams.get("status")?.split(",").includes("completed") ?? false,
+    );
 
     const importsGrid = page.locator(".admin-data-grid");
     await expect(importsGrid.getByText(importMailbox)).toBeVisible();

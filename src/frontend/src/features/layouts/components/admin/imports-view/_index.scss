@@ -1,15 +1,15 @@
-// Domain imports list: the search shares its row with the "show all" switch,
-// and each run names its mailbox above who started it.
+// Domain imports list: the status filter sits under the search, and each run
+// names its mailbox above who started it.
 .admin-imports {
     &__toolbar {
         display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: var(--c--globals--spacings--sm) var(--c--globals--spacings--lg);
+        flex-direction: column;
+        gap: var(--c--globals--spacings--sm);
+    }
 
-        > :first-child {
-            flex: 1 1 20rem;
-        }
+    // Sized to its label, not stretched to the search width.
+    &__status-filter {
+        align-self: flex-end;
     }
 
     &__mailbox {

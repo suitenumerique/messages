@@ -5,24 +5,24 @@ import { Column, usePagination } from "@gouvfr-lasuite/ui-components";
 import {
     AdminImportRun,
     MailDomainAdmin,
-    MaildomainsImportsListStatus,
+    MaildomainsImportsListStatusItem as ListStatus,
     getMailboxesImportsListQueryKey,
     getMaildomainsImportsListQueryKey,
     useMaildomainsImportsList,
 } from "@/features/api/gen";
 import { ImportsDataGrid } from "@/features/layouts/components/mailbox-settings/imports-view/imports-data-grid";
-import { importsRefetchInterval } from "@/hooks/import-status";
-import { useJustCompletedRuns } from "./use-just-completed-runs";
+import { IMPORT_LIST_STATUSES, importsRefetchInterval } from "@/hooks/import-status";
+import { useJustEndedRuns } from "./use-just-ended-runs";
 
 type AdminImportsDataGridProps = {
     domain: MailDomainAdmin;
     pagination: ReturnType<typeof usePagination>;
     searchQuery: string;
-    showAll: boolean;
+    statuses: ListStatus[];
 };
 
 /** The imports of every mailbox of a domain, kept live while one progresses. */
-export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, showAll }: AdminImportsDataGridProps) => {
+export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, statuses }: AdminImportsDataGridProps) => {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const trimmedQuery = searchQuery.trim();
@@ -30,7 +30,7 @@ export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, showAll 
         domain.id,
         {
             page: pagination.page,
-            status: showAll ? MaildomainsImportsListStatus.all : MaildomainsImportsListStatus.active,
+            status: statuses,
             ...(trimmedQuery ? { q: trimmedQuery } : {}),
         },
         {
@@ -43,18 +43,18 @@ export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, showAll 
         },
     );
     const rows = data?.data.results;
-    const { completedRuns, dismiss } = useJustCompletedRuns(
+    const { endedRuns, dismiss } = useJustEndedRuns(
         isPlaceholderData ? undefined : rows,
-        [domain.id, pagination.page, showAll, trimmedQuery].join("|"),
-        !showAll,
+        [domain.id, pagination.page, statuses.join(","), trimmedQuery].join("|"),
+        statuses,
     );
     const listedIds = new Set((rows ?? []).map((row) => row.id));
     const displayedRows = [
-        ...completedRuns.filter((run) => !listedIds.has(run.id)),
+        ...endedRuns.filter((run) => !listedIds.has(run.id)),
         ...(rows ?? []),
     ];
 
-    // Any action outdates the final state kept for a just-completed run: the
+    // Any action outdates the final state kept for a just-ended run: the
     // refreshed list tells where the run stands now.
     const handleRowChange = (row: AdminImportRun) => {
         dismiss(row.id);
@@ -106,7 +106,9 @@ export const AdminImportsDataGrid = ({ domain, pagination, searchQuery, showAll 
             leadingColumns={leadingColumns}
             pagination={pagination}
             emptyPlaceholderLabel={
-                showAll ? t("No imports yet") : t("No import in progress or failed")
+                statuses.length === IMPORT_LIST_STATUSES.length && !trimmedQuery
+                    ? t("No imports yet")
+                    : t("No import matches these filters")
             }
         />
     );
