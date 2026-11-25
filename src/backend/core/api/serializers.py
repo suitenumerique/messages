@@ -2547,6 +2547,14 @@ class AdminImportRunSerializer(ImportRunSerializer):
         read_only_fields = fields
 
 
+class AdminImportStatsSerializer(serializers.Serializer):  # pylint: disable=abstract-method
+    """How many import runs of a mail domain are in each list status."""
+
+    in_progress = serializers.IntegerField(read_only=True)
+    failed = serializers.IntegerField(read_only=True)
+    completed = serializers.IntegerField(read_only=True)
+
+
 class ImportUpdateSerializer(serializers.Serializer):  # pylint: disable=abstract-method
     """Body of ``PATCH /mailboxes/{id}/imports/{id}/`` — change how a run runs.
 

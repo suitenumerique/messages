@@ -9,6 +9,7 @@
 export * from "./admin_import_run";
 export * from "./admin_import_run_created_by";
 export * from "./admin_import_run_failure_reasons";
+export * from "./admin_import_stats";
 export * from "./attachment";
 export * from "./blob_upload_create201";
 export * from "./blob_upload_create_body";

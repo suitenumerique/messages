@@ -4882,6 +4882,43 @@
                 }
             }
         },
+        "/api/v1.0/maildomains/{maildomain_pk}/imports/stats/": {
+            "get": {
+                "operationId": "maildomains_imports_stats_retrieve",
+                "description": "Count the domain's import runs in each status, in one query.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "maildomain_pk",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "import"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AdminImportStats"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1.0/maildomains/{maildomain_pk}/mailboxes/": {
             "get": {
                 "operationId": "maildomains_mailboxes_list",
@@ -8124,6 +8161,29 @@
                     "success_count",
                     "total_messages",
                     "updated_at"
+                ]
+            },
+            "AdminImportStats": {
+                "type": "object",
+                "description": "How many import runs of a mail domain are in each list status.",
+                "properties": {
+                    "in_progress": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "failed": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "completed": {
+                        "type": "integer",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "completed",
+                    "failed",
+                    "in_progress"
                 ]
             },
             "Attachment": {

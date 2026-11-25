@@ -58,6 +58,12 @@ def _list_url(domain):
     )
 
 
+def _stats_url(domain):
+    return reverse(
+        "admin-maildomains-imports-stats", kwargs={"maildomain_pk": domain.id}
+    )
+
+
 def _make_import(mailbox, user=None, source=enums.ImportSource.MBOX):
     return create_import_channel(recipient=mailbox, user=user, source_type=source.value)
 
@@ -68,6 +74,56 @@ def _finish(channel, status_value):
 
 def _ids(response):
     return {row["id"] for row in response.data["results"]}
+
+
+@pytest.fixture
+def runs(domain):
+    """One import of the domain in each state the list tells apart."""
+    mailbox = factories.MailboxFactory(domain=domain)
+
+    pending = _make_import(mailbox)
+
+    running = _make_import(mailbox)
+    mark_started(running.id, total=10)
+
+    failed = _make_import(mailbox)
+    _finish(failed, enums.ImportStatus.FAILED.value)
+
+    completed = _make_import(mailbox)
+    _finish(completed, enums.ImportStatus.COMPLETED.value)
+
+    polling = _make_import(mailbox, source=enums.ImportSource.IMAP)
+    enable_continuous(polling)
+    _finish(polling, enums.ImportStatus.COMPLETED.value)
+
+    paused = _make_import(mailbox, source=enums.ImportSource.IMAP)
+    enable_continuous(paused)
+    _finish(paused, enums.ImportStatus.COMPLETED.value)
+    pause_import(paused)
+
+    # Resumed after a failed pass: active again, still failed until the
+    # next pass ends.
+    resumed = _make_import(mailbox, source=enums.ImportSource.IMAP)
+    enable_continuous(resumed)
+    _finish(resumed, enums.ImportStatus.FAILED.value)
+    enable_continuous(resumed)
+
+    cancelled = _make_import(mailbox)
+    _finish(cancelled, enums.ImportStatus.CANCELLED.value)
+
+    return {
+        name: str(channel.id)
+        for name, channel in {
+            "pending": pending,
+            "running": running,
+            "failed": failed,
+            "completed": completed,
+            "polling": polling,
+            "paused": paused,
+            "resumed": resumed,
+            "cancelled": cancelled,
+        }.items()
+    }
 
 
 class TestAdminMailDomainImportsPermissions:
@@ -148,55 +204,6 @@ class TestAdminMailDomainImportsPermissions:
 class TestAdminMailDomainImportsFilters:
     """The ``status`` and ``q`` filters, and the pagination."""
 
-    @pytest.fixture
-    def runs(self, domain):
-        """One import of the domain in each state the list tells apart."""
-        mailbox = factories.MailboxFactory(domain=domain)
-
-        pending = _make_import(mailbox)
-
-        running = _make_import(mailbox)
-        mark_started(running.id, total=10)
-
-        failed = _make_import(mailbox)
-        _finish(failed, enums.ImportStatus.FAILED.value)
-
-        completed = _make_import(mailbox)
-        _finish(completed, enums.ImportStatus.COMPLETED.value)
-
-        polling = _make_import(mailbox, source=enums.ImportSource.IMAP)
-        enable_continuous(polling)
-        _finish(polling, enums.ImportStatus.COMPLETED.value)
-
-        paused = _make_import(mailbox, source=enums.ImportSource.IMAP)
-        enable_continuous(paused)
-        _finish(paused, enums.ImportStatus.COMPLETED.value)
-        pause_import(paused)
-
-        # Resumed after a failed pass: active again, still failed until the
-        # next pass ends.
-        resumed = _make_import(mailbox, source=enums.ImportSource.IMAP)
-        enable_continuous(resumed)
-        _finish(resumed, enums.ImportStatus.FAILED.value)
-        enable_continuous(resumed)
-
-        cancelled = _make_import(mailbox)
-        _finish(cancelled, enums.ImportStatus.CANCELLED.value)
-
-        return {
-            name: str(channel.id)
-            for name, channel in {
-                "pending": pending,
-                "running": running,
-                "failed": failed,
-                "completed": completed,
-                "polling": polling,
-                "paused": paused,
-                "resumed": resumed,
-                "cancelled": cancelled,
-            }.items()
-        }
-
     def test_default_lists_every_import_but_cancelled_ones(
         self, api_client, domain, runs
     ):
@@ -274,6 +281,64 @@ class TestAdminMailDomainImportsFilters:
         assert response.data["count"] == 21
         assert len(response.data["results"]) == 20
         assert response.data["next"] is not None
+
+
+class TestAdminMailDomainImportsStats:
+    """``GET .../imports/stats/``: how many imports are in each status."""
+
+    def test_stats_count_the_imports_in_each_status(self, api_client, domain, runs):
+        """Cancelled runs are left out, like in the list."""
+        response = api_client.get(_stats_url(domain))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"in_progress": 3, "failed": 2, "completed": 2}
+
+    def test_stats_match_the_list_filtered_by_each_status(
+        self, api_client, domain, runs
+    ):
+        stats = api_client.get(_stats_url(domain)).data
+
+        for name, count in stats.items():
+            listed = api_client.get(_list_url(domain), {"status": name})
+            assert listed.data["count"] == count, name
+
+    def test_stats_leave_other_domains_out(self, api_client, domain):
+        _make_import(factories.MailboxFactory(domain=domain))
+        _make_import(factories.MailboxFactory())
+
+        response = api_client.get(_stats_url(domain))
+
+        assert response.data == {"in_progress": 1, "failed": 0, "completed": 0}
+
+    def test_stats_read_the_imports_in_one_query(self, api_client, domain, runs):
+        with CaptureQueriesContext(connection) as queries:
+            api_client.get(_stats_url(domain))
+
+        channel_queries = [
+            query for query in queries if '"messages_channel"' in query["sql"]
+        ]
+        assert len(channel_queries) == 1
+
+    def test_stats_are_denied_to_an_admin_of_another_domain(self, domain):
+        user = factories.UserFactory()
+        factories.MailDomainAccessFactory(
+            user=user, role=enums.MailDomainAccessRoleChoices.ADMIN
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get(_stats_url(domain))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_stats_are_denied_when_imports_are_disabled(
+        self, api_client, domain, settings
+    ):
+        settings.FEATURE_IMPORT_MESSAGES = False
+
+        response = api_client.get(_stats_url(domain))
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class TestAdminMailDomainImportsSerialization:

@@ -265,6 +265,10 @@ plus `mailbox_details` and `created_by` for display.
 - Cancelled runs are never listed: they are being purged.
 - `q` searches the mailbox local part and contact name.
 
+`GET .../imports/stats/` counts the same runs in each status
+(`{"in_progress": …, "failed": …, "completed": …}`) in one query, whatever
+the filters: the admin UI badges its Imports tab with them.
+
 ### Uploading a file first
 
 A file import is two steps. The client uploads the archive to the

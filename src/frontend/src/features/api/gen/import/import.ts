@@ -22,6 +22,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AdminImportStats,
   ImportCreateRequest,
   ImportRun,
   MaildomainsImportsListParams,
@@ -1149,6 +1150,199 @@ export function useMaildomainsImportsList<
   const queryOptions = getMaildomainsImportsListQueryOptions(
     maildomainPk,
     params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+/**
+ * Count the domain's import runs in each status, in one query.
+ */
+export type maildomainsImportsStatsRetrieveResponse200 = {
+  data: AdminImportStats;
+  status: 200;
+};
+
+export type maildomainsImportsStatsRetrieveResponseSuccess =
+  maildomainsImportsStatsRetrieveResponse200 & {
+    headers: Headers;
+  };
+export type maildomainsImportsStatsRetrieveResponse =
+  maildomainsImportsStatsRetrieveResponseSuccess;
+
+export const getMaildomainsImportsStatsRetrieveUrl = (maildomainPk: string) => {
+  return `/api/v1.0/maildomains/${maildomainPk}/imports/stats/`;
+};
+
+export const maildomainsImportsStatsRetrieve = async (
+  maildomainPk: string,
+  options?: RequestInit,
+): Promise<maildomainsImportsStatsRetrieveResponse> => {
+  return fetchAPI<maildomainsImportsStatsRetrieveResponse>(
+    getMaildomainsImportsStatsRetrieveUrl(maildomainPk),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getMaildomainsImportsStatsRetrieveQueryKey = (
+  maildomainPk?: string,
+) => {
+  return [`/api/v1.0/maildomains/${maildomainPk}/imports/stats/`] as const;
+};
+
+export const getMaildomainsImportsStatsRetrieveQueryOptions = <
+  TData = Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getMaildomainsImportsStatsRetrieveQueryKey(maildomainPk);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>
+  > = ({ signal }) =>
+    maildomainsImportsStatsRetrieve(maildomainPk, {
+      signal,
+      ...requestOptions,
+    });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!maildomainPk,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type MaildomainsImportsStatsRetrieveQueryResult = NonNullable<
+  Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>
+>;
+export type MaildomainsImportsStatsRetrieveQueryError = ErrorType<unknown>;
+
+export function useMaildomainsImportsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  maildomainPk: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsImportsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+          TError,
+          Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useMaildomainsImportsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+
+export function useMaildomainsImportsStatsRetrieve<
+  TData = Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+  TError = ErrorType<unknown>,
+>(
+  maildomainPk: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof maildomainsImportsStatsRetrieve>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getMaildomainsImportsStatsRetrieveQueryOptions(
+    maildomainPk,
     options,
   );
 

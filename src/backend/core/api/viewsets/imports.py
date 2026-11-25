@@ -11,12 +11,13 @@ its messages. An import run is a ``Channel`` with ``type=import`` grouping
 every message the run created.
 ``MessagesArchiveUploadViewSet`` is the S3 upload helper a file import uses
 before ``POST .../imports/``.
-``GET /maildomains/{id}/imports/`` lists the runs of every mailbox of a domain;
-acting on one of them goes through its mailbox-nested route.
+``GET /maildomains/{id}/imports/`` lists the runs of every mailbox of a domain,
+and ``GET .../imports/stats/`` counts them per status; acting on one of them
+goes through its mailbox-nested route.
 """
 
 from django.core.files.storage import storages
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils.functional import cached_property
@@ -52,6 +53,7 @@ from core.services.importer.tasks import cancel_import_task, run_import_task
 from .. import permissions
 from ..serializers import (
     AdminImportRunSerializer,
+    AdminImportStatsSerializer,
     ImportCreateSerializer,
     ImportFileUploadAbortSerializer,
     ImportFileUploadCompleteSerializer,
@@ -457,7 +459,7 @@ IMPORT_LIST_STATUSES = {
 
 @extend_schema(tags=["import"])
 class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    """List the import runs of every mailbox of a mail domain.
+    """List and count the import runs of every mailbox of a mail domain.
 
     Lets domain admins follow imports without being admins of each mailbox.
     Read-only: starting or managing a run goes through the mailbox-nested
@@ -470,6 +472,13 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
     ]
     serializer_class = AdminImportRunSerializer
 
+    def _domain_runs(self):
+        """Every import run of the domain an admin may see."""
+        return _import_runs(mailbox__domain_id=self.kwargs["maildomain_pk"]).exclude(
+            # A cancelled run is being purged, and its row deleted right after.
+            settings__import__status=enums.ImportStatus.CANCELLED.value
+        )
+
     def get_queryset(self):
         """The domain's import runs, filtered by ``status`` and ``q``."""
         statuses = set(self.request.query_params.getlist("status"))
@@ -479,11 +488,8 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
                 {"status": f"Expected any of {', '.join(IMPORT_LIST_STATUSES)}."}
             )
 
-        queryset = (
-            _import_runs(mailbox__domain_id=self.kwargs["maildomain_pk"])
-            # A cancelled run is being purged, and its row deleted right after.
-            .exclude(settings__import__status=enums.ImportStatus.CANCELLED.value)
-            .select_related("mailbox__domain", "mailbox__contact", "user")
+        queryset = self._domain_runs().select_related(
+            "mailbox__domain", "mailbox__contact", "user"
         )
         if statuses:
             matching = Q()
@@ -528,3 +534,15 @@ class AdminMailDomainImportViewSet(mixins.ListModelMixin, viewsets.GenericViewSe
     def list(self, request, *args, **kwargs):
         """List the domain's import runs, most recently active first."""
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(responses=AdminImportStatsSerializer)
+    @action(detail=False, methods=["get"])
+    def stats(self, request, *args, **kwargs):
+        """Count the domain's import runs in each status, in one query."""
+        counts = self._domain_runs().aggregate(
+            **{
+                name: Count("id", filter=matching)
+                for name, matching in IMPORT_LIST_STATUSES.items()
+            }
+        )
+        return Response(AdminImportStatsSerializer(counts).data)
