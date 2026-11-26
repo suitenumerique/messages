@@ -98,17 +98,6 @@ def _date_value(prop):
     return value if isinstance(value, date) else None
 
 
-def _sequence(component):
-    """Return the SEQUENCE of a component, or 0 when it has no valid one.
-
-    SabreDAV writes an empty SEQUENCE in the REPLY to an event that has none.
-    """
-    try:
-        return int(component.get("SEQUENCE"))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _occurrence_key(recurrence_id):
     """Return the key of the occurrence, or None when there is no RECURRENCE-ID."""
     return None if recurrence_id is None else recurrence_key(recurrence_id)
@@ -868,7 +857,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 {
                     "recurrence_id": _date_value(recurrence_id),
                     "partstat": partstat,
-                    "sequence": _sequence(comp),
                 }
             )
         if reply:
@@ -893,6 +881,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         the answer. An answer without RECURRENCE-ID goes to the series. Unlike
         SabreDAV, it also goes to the exceptions that the reply does not name,
         see ``_apply_series_answer``.
+
+        The SEQUENCE and DTSTAMP of the reply are not compared with the stored
+        event, as in SabreDAV. SabreDAV sends an update only to the attendees
+        that the change affects, so an attendee can have an older SEQUENCE and
+        a valid answer. An answer to an older version of the event, for example
+        an older time, is applied too. RFC 5546 lets the organizer accept it.
 
         ``received_at`` is the time when the mailbox received the reply, in
         seconds. The apply task can retry an old reply after a new one. A reply
@@ -1068,7 +1062,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 # This entry also holds the later occurrences.
                 outcome = "recurrence-not-supported"
             elif key in events:
-                outcome = self._apply_answer(events[key], attendee, answer)
+                outcome = self._set_partstat(events[key], attendee, answer["partstat"])
             else:
                 outcome = self._add_exception(stored, events, attendee, answer)
             outcomes[index] = outcome
@@ -1099,7 +1093,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 series and series.get("UID"),
             )
             return "no-matching-occurrence"
-        outcome = self._apply_answer(exception, attendee_email, answer)
+        outcome = self._set_partstat(exception, attendee_email, answer["partstat"])
         # An exception that changes nothing has no use.
         if outcome == "applied":
             stored.add_component(exception)
@@ -1116,17 +1110,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         attendee has no answer there, or has the answer that the series had. A
         different answer for one occurrence stays.
 
-        The SEQUENCE of the answer is the SEQUENCE of the series. It is not
-        compared with the SEQUENCE of an exception. A moved occurrence often
-        has a higher SEQUENCE than its series, and a reply for the series does
-        not contain it.
-
         Returns ``applied`` when a VEVENT changes, else the reason why the
         series does not change.
         """
         series = events[None]
         before = self._partstat(series, attendee_email)
-        outcome = self._apply_answer(series, attendee_email, answer)
+        outcome = self._set_partstat(series, attendee_email, answer["partstat"])
         if outcome not in ("applied", "unchanged"):
             return outcome
         for key, exception in events.items():
@@ -1139,17 +1128,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if changed == "applied":
                 outcome = "applied"
         return outcome
-
-    @staticmethod
-    def _apply_answer(event, attendee_email, answer):
-        """Set the answer of the attendee on one VEVENT, in-place.
-
-        Returns ``applied``, or the reason why the VEVENT does not change. An
-        answer to an older SEQUENCE of the VEVENT is stale.
-        """
-        if answer["sequence"] < _sequence(event):
-            return "stale-sequence"
-        return CalDAVService._set_partstat(event, attendee_email, answer["partstat"])
 
     @staticmethod
     def _attendees(event, attendee_email):

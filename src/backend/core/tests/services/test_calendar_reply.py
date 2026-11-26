@@ -136,16 +136,6 @@ def test_same_answer_for_the_series_goes_to_an_exception_without_answer():
     assert _partstat(exception) == "ACCEPTED"
 
 
-def test_stale_answer_for_the_series_does_not_change_an_exception():
-    stored = ICalendar.from_ical(SERIES.replace("SEQUENCE:0", "SEQUENCE:2"))
-
-    outcomes, (series, exception) = _apply(_reply((None, "ACCEPTED", 1)), stored)
-
-    assert outcomes == ["stale-sequence"]
-    assert _partstat(series) == "NEEDS-ACTION"
-    assert _partstat(exception) == "NEEDS-ACTION"
-
-
 def test_answer_for_one_occurrence_changes_only_its_exception():
     outcomes, (series, exception) = _apply(_reply((MOVED, "DECLINED", 1)))
 
@@ -165,14 +155,14 @@ def test_reply_with_an_answer_for_the_series_and_for_an_exception():
     assert _partstat(exception) == "TENTATIVE"
 
 
-def test_answer_to_the_old_time_of_a_moved_occurrence_is_stale():
+def test_answer_to_the_old_time_of_a_moved_occurrence_is_applied():
     outcomes, (series, exception) = _apply(
-        _reply((None, "ACCEPTED", 0), (MOVED, "ACCEPTED", 0))
+        _reply((None, "ACCEPTED", 0), (MOVED, "DECLINED", 0))
     )
 
-    assert outcomes == ["applied", "stale-sequence"]
+    assert outcomes == ["applied", "applied"]
     assert _partstat(series) == "ACCEPTED"
-    assert _partstat(exception) == "NEEDS-ACTION"
+    assert _partstat(exception) == "DECLINED"
 
 
 def test_answer_for_an_occurrence_without_exception_adds_one():
@@ -310,15 +300,6 @@ def test_answer_for_an_occurrence_before_a_new_answer_for_the_series():
     assert outcomes == ["applied", "applied"]
     assert _partstat(series) == "DECLINED"
     assert _partstat(added) == "ACCEPTED"
-
-
-def test_stale_answer_for_an_occurrence_without_exception_adds_nothing():
-    stored = ICalendar.from_ical(SERIES.replace("SEQUENCE:0", "SEQUENCE:2", 1))
-
-    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 1)), stored)
-
-    assert outcomes == ["stale-sequence"]
-    assert len(events) == 2
 
 
 def test_answer_for_an_occurrence_that_repeats_the_series_answer_adds_nothing():
@@ -545,13 +526,11 @@ END:VEVENT
 END:VCALENDAR"""
 
 
-def test_parse_reads_an_empty_sequence_as_zero():
+def test_parse_reads_a_reply_with_an_empty_sequence():
     reply, reason = CalDAVService._parse_reply(SABREDAV_REPLY, ATTENDEE)
 
     assert reason is None
-    assert reply["answers"] == [
-        {"recurrence_id": None, "partstat": "DECLINED", "sequence": 0}
-    ]
+    assert reply["answers"] == [{"recurrence_id": None, "partstat": "DECLINED"}]
 
 
 def test_answer_with_an_empty_sequence_is_applied():
@@ -621,6 +600,24 @@ def test_outlook_answer_for_a_moved_occurrence_changes_its_exception():
     assert outcomes == ["applied"]
     assert _partstat(series) == "NEEDS-ACTION"
     assert _partstat(exception) == "TENTATIVE"
+
+
+def test_outlook_answer_with_an_older_sequence_adds_an_exception():
+    # The organizer changed the attendees of the series twice. SabreDAV did not
+    # send these updates to this attendee, so Outlook still has SEQUENCE 2.
+    stored = ICalendar.from_ical(SERIES.replace("SEQUENCE:0", "SEQUENCE:4", 1))
+    ics = _outlook_reply(
+        "DECLINED", "20260330T100000", "20260330T100000", "20260330T110000", 2
+    ).replace("TZID=Romance Standard Time", 'TZID="Romance Standard Time"')
+
+    outcomes, (series, _, added) = _apply(ics, stored)
+
+    assert outcomes == ["applied"]
+    assert _partstat(series) == "NEEDS-ACTION"
+    assert _partstat(added) == "DECLINED"
+    assert added["SEQUENCE"] == 4
+    assert added["RECURRENCE-ID"].to_ical() == b"20260330T100000"
+    assert added["RECURRENCE-ID"].params["TZID"] == "Europe/Paris"
 
 
 def test_open_xchange_answer_for_an_excluded_date_is_ignored(caplog):

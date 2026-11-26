@@ -2804,7 +2804,7 @@ class TestApplyReply:
         assert result["applied"] is False
         assert result["reason"] == "no-matching-event"
 
-    def test_stale_sequence_ignored(self, caldav_channel, radicale_with_calendar):
+    def test_older_sequence_is_applied(self, caldav_channel, radicale_with_calendar):
         calendar_url, put_event = radicale_with_calendar
         uid = "apply-seq@example.com"
         self._seed(put_event, uid, seq=5)
@@ -2814,9 +2814,8 @@ class TestApplyReply:
             self._reply(uid, "ACCEPTED", seq=2), attendee_email=self.ATTENDEE
         )
 
-        assert result["applied"] is False
-        assert result["reason"] == "stale-sequence"
-        assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
+        assert result == {"applied": True, "reason": "applied"}
+        assert self._fetch_partstat(calendar_url, uid) == "ACCEPTED"
 
     def test_same_answer_is_not_written_again(
         self, caldav_channel, radicale_with_calendar
