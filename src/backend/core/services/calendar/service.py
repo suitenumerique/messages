@@ -915,7 +915,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             return {"applied": False, "reason": reason}
 
         reply["received_at"] = received_at
-        organizer_norm = attendee_key(organizer_email)
+        reply["organizer"] = attendee_key(organizer_email)
 
         for calendar in self.list_calendars(writable_only=True):
             for resource_url, etag, stored_ics in self._find_by_uid(
@@ -926,16 +926,22 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 except Exception:  # pylint: disable=broad-exception-caught
                     logger.debug("Skipping unparseable stored event", exc_info=True)
                     continue
-                if not self._event_has_uid(stored, reply["uid"]):
-                    continue
                 # Only touch the copy the mailbox actually organizes — skip a
                 # same-UID copy where it's merely an attendee, keep searching.
-                if organizer_norm and self._event_organizer(stored) != organizer_norm:
+                if not self._is_reply_target(stored, reply):
                     continue
                 return self._apply_reply_to_resource(resource_url, stored, etag, reply)
 
         logger.info("No stored event matches iTIP REPLY UID %r", reply["uid"])
         return {"applied": False, "reason": "no-matching-event"}
+
+    @staticmethod
+    def _is_reply_target(stored, reply):
+        """Tell if ``stored`` is the event of the reply, with its organizer."""
+        if not CalDAVService._event_has_uid(stored, reply["uid"]):
+            return False
+        organizer = reply.get("organizer")
+        return not organizer or CalDAVService._event_organizer(stored) == organizer
 
     @staticmethod
     def _event_organizer(cal):
@@ -956,7 +962,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """
         if not etag:
             # The REPORT gave no ETag.
-            stored, etag, reason = self._read_again(resource_url)
+            stored, etag, reason = self._read_again(resource_url, reply)
             if reason:
                 return {"applied": False, "reason": reason}
         state_key = _reply_order_key(resource_url, reply["attendee"])
@@ -992,12 +998,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     raise CalDAVTransientError(
                         "The event changes during the write", status_code=412
                     ) from exc
-                stored, etag, reason = self._read_again(resource_url)
+                stored, etag, reason = self._read_again(resource_url, reply)
                 if reason:
                     return {"applied": False, "reason": reason}
         return {"applied": False, "reason": "concurrent-modification"}
 
-    def _read_again(self, resource_url):
+    def _read_again(self, resource_url, reply):
         """Read the event of the reply again, with its ETag.
 
         Returns ``(stored, etag, None)``, or ``(None, None, reason)`` when the
@@ -1016,6 +1022,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             stored = ICalendar.from_ical(ics)
         except Exception:  # pylint: disable=broad-exception-caught
             return None, None, "concurrent-modification"
+        # The event can change after the REPORT.
+        if not self._is_reply_target(stored, reply):
+            return None, None, "no-matching-event"
         return stored, etag, None
 
     @staticmethod

@@ -3088,6 +3088,35 @@ class TestApplyReply:
         assert len(puts) == 2  # first 412, refetch + retry succeeded
         assert puts[1] == "etag-2"  # retry used the freshly-fetched etag
 
+    @pytest.mark.parametrize("etag", ["etag-1", ""])
+    def test_refreshed_event_with_another_organizer_is_not_written(
+        self, caldav_channel, etag
+    ):
+        # After a 412, or to get a missing etag, the event is read again.
+        service = CalDAVService.from_channel(caldav_channel)
+        event = _ORGANIZER_EVENT.format(uid="moved", seq=0, attendee=self.ATTENDEE)
+        reply, _ = CalDAVService._parse_reply(
+            self._reply("moved", "ACCEPTED"), self.ATTENDEE
+        )
+        reply["organizer"] = "organizer@example.com"
+        fresh = event.replace("organizer@example.com", "other@example.com")
+        puts = []
+
+        def put_side(url, body, etag=None):
+            puts.append(etag)
+            raise CalDAVError("precondition failed", status_code=412)
+
+        with (
+            mock.patch.object(service, "_put_resource", side_effect=put_side),
+            mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")),
+        ):
+            result = service._apply_reply_to_resource(
+                "http://x/moved.ics", ICalendar.from_ical(event), etag, reply
+            )
+
+        assert result == {"applied": False, "reason": "no-matching-event"}
+        assert puts == (["etag-1"] if etag else [])
+
     def test_conditional_put_retries_later_after_second_412(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
         stored = ICalendar.from_ical(
