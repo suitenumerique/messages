@@ -40,6 +40,11 @@
         background-color: var(--c--contextuals--background--semantic--error--tertiary);
         color: var(--c--contextuals--content--semantic--error--primary);
     }
+
+    &--answer {
+        background-color: var(--c--contextuals--background--semantic--info--tertiary);
+        color: var(--c--contextuals--content--semantic--info--primary);
+    }
 }
 
 .calendar-invite__event {

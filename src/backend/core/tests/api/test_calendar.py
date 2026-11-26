@@ -1079,6 +1079,59 @@ class TestCalendarAddEventView:
         organizer = vevent.get("ORGANIZER")
         assert organizer.params.get("SCHEDULE-AGENT") != "CLIENT"
 
+    @pytest.mark.parametrize("method", ["REPLY", "COUNTER"])
+    def test_add_event_refuses_an_attendee_answer(
+        self,
+        api_client,
+        mailbox,
+        caldav_channel,
+        user_with_mailbox,
+        radicale_with_calendar,
+        method,
+    ):
+        """The service rejects a REPLY and a COUNTER. The stored attendees do
+        not change."""
+        calendar_url, put_event = radicale_with_calendar
+        api_client.force_authenticate(user=user_with_mailbox)
+        uid = "add-answer@example.com"
+        put_event(
+            uid,
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n"
+            f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260101T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            f"SUMMARY:Team Meeting\r\nORGANIZER:mailto:{mailbox}\r\n"
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:b@example.com\r\n"
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:c@example.com\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n",
+        )
+        answer = (
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n"
+            f"METHOD:{method}\r\n"
+            f"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260102T000000Z\r\n"
+            "DTSTART:20260601T100000Z\r\nDTEND:20260601T110000Z\r\n"
+            f"SUMMARY:Team Meeting\r\nORGANIZER:mailto:{mailbox}\r\n"
+            "ATTENDEE;PARTSTAT=ACCEPTED:mailto:b@example.com\r\n"
+            "END:VEVENT\r\nEND:VCALENDAR\r\n"
+        )
+
+        resp = api_client.post(
+            f"/api/v1.0/mailboxes/{mailbox.id}/calendar/add/",
+            {"ics_data": answer},
+        )
+        assert resp.status_code == 200, resp.content
+
+        stored = requests.get(
+            calendar_url.rstrip("/") + f"/{uid}.ics",
+            auth=(RADICALE_USER, RADICALE_PASSWORD),
+            timeout=5,
+        )
+        attendees = ICalendar.from_ical(stored.text).walk("VEVENT")[0].get("ATTENDEE")
+        assert isinstance(attendees, list)
+        assert len(attendees) == 2
+
+        with pytest.raises(CalDAVError, match="answer"):
+            CalDAVService.from_channel(caldav_channel).add_event(answer)
+
     def test_add_event_no_channel(self, api_client, mailbox, user_with_mailbox):
         """Without a caldav channel, returns 404 and does NOT schedule a task."""
         api_client.force_authenticate(user=user_with_mailbox)

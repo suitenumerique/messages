@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Button, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { ClockArrowCirclepath, Reply } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import {
     convertIcsCalendar,
@@ -655,7 +656,12 @@ const fetchAndParseCalendar = async (url: string): Promise<IcsCalendar> => {
         throw new Error(`HTTP error: ${response.status}`);
     }
     const icsContent = await response.text();
-    return convertIcsCalendar(undefined, icsContent);
+    // Property names are case-insensitive (RFC 5545), but ts-ics only reads
+    // upper-case names. Without this, a "method:REPLY" line gives no method.
+    return convertIcsCalendar(
+        undefined,
+        icsContent.replace(/^method(?=[:;])/im, "METHOD"),
+    );
 };
 
 const fetchIcsContent = async (url: string): Promise<string> => {
@@ -769,7 +775,10 @@ export const CalendarInvite = ({
         () => collapseRecurringEvents(calendar?.events ?? []),
         [calendar],
     );
-    const isCancellation = calendar?.method === "CANCEL";
+    const method = calendar?.method?.toUpperCase();
+    const isCancellation = method === "CANCEL";
+    const isCounter = method === "COUNTER";
+    const isAttendeeAnswer = method === "REPLY" || isCounter;
 
     // Conflict detection for the first event
     const firstEvent = events[0];
@@ -1115,10 +1124,8 @@ export const CalendarInvite = ({
     // Footer reserves a stable height: loading → placeholder; error →
     // "Calendar service unavailable"; ready → dropdown + RSVP + add.
     const renderFooter = () => {
-        if (isCancellation) {
-            // For cancellations the cancellation banner is the primary signal;
-            // we still reserve the footer slot so layout is stable but show
-            // nothing actionable.
+        if (isCancellation || isAttendeeAnswer) {
+            // The card has no action for these messages.
             return null;
         }
         if (!isCalDAVConfigured) {
@@ -1244,6 +1251,15 @@ export const CalendarInvite = ({
                 >
                     <Icon name="event_busy" type={IconType.OUTLINED} />
                     <span>{t("This event has been cancelled")}</span>
+                </div>
+            )}
+            {isAttendeeAnswer && (
+                <div
+                    className="calendar-invite__method-banner calendar-invite__method-banner--answer"
+                    role="note"
+                >
+                    <Icon icon={isCounter ? ClockArrowCirclepath : Reply} />
+                    <span>{isCounter ? t("New time proposed") : t("Invitation response")}</span>
                 </div>
             )}
 
