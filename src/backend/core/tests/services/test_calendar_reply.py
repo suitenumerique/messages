@@ -242,6 +242,28 @@ def test_answer_for_one_date_does_not_change_a_change_for_this_and_future():
     assert _partstat(events[1]) == "NEEDS-ACTION"
 
 
+def test_no_exception_when_the_event_has_too_many_components():
+    stored = ICalendar.from_ical(SERIES)
+    series = stored.walk("VEVENT")[0]
+    while len(stored.subcomponents) < CalDAVService._MAX_EVENT_COMPONENTS:
+        stored.add_component(ICalendar())
+
+    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 0)), stored)
+
+    assert outcomes == ["too-many-exceptions"]
+    assert len(events) == 2
+    assert _partstat(series) == "NEEDS-ACTION"
+
+
+def test_parse_refuses_a_long_uid():
+    reply, reason = CalDAVService._parse_reply(
+        _reply((None, "ACCEPTED", 0), uid="u" * 256), ATTENDEE
+    )
+
+    assert reply is None
+    assert reason == "unparseable-reply"
+
+
 def test_no_exception_for_a_series_with_an_exclusion_rule():
     # EXRULE removes each date until 23 March, also 16 March.
     stored = ICalendar.from_ical(

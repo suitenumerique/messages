@@ -131,6 +131,53 @@ def test_old_reply_keeps_changes_to_an_exception_of_a_newer_reply():
 
 
 @pytest.mark.usefixtures("reply_order")
+def test_state_keeps_the_newest_replies():
+    stored = ICalendar.from_ical(SERIES)
+    with mock.patch("core.services.calendar.service._MAX_REPLY_ORDER_ANSWERS", 2):
+        for at, partstat in (
+            (100.0, "ACCEPTED"),
+            (200.0, "DECLINED"),
+            (300.0, "TENTATIVE"),
+        ):
+            _apply_to_resource(_reply((None, partstat, 0)), stored, received_at=at)
+        # Older than a reply that went into the answers from before.
+        result, _put = _apply_to_resource(
+            _reply((None, "DECLINED", 0)), stored, received_at=50.0
+        )
+
+    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
+    assert [old["at"] for old in state["replies"]] == [200.0, 300.0]
+    assert state["floor"] == 100.0
+    assert result == {"applied": False, "reason": "superseded"}
+    assert _partstat(stored.walk("VEVENT")[0]) == "TENTATIVE"
+
+
+@pytest.mark.usefixtures("reply_order")
+def test_state_limits_the_answers_of_its_replies():
+    stored = ICalendar.from_ical(SERIES)
+    with mock.patch("core.services.calendar.service._MAX_REPLY_ORDER_ANSWERS", 3):
+        _apply_to_resource(
+            _reply((MOVED, "ACCEPTED", 0), (REGULAR, "DECLINED", 0)),
+            stored,
+            received_at=100.0,
+        )
+        _apply_to_resource(
+            _reply((None, "TENTATIVE", 0), (MOVED, "DECLINED", 0)),
+            stored,
+            received_at=200.0,
+        )
+
+    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
+    assert [old["at"] for old in state["replies"]] == [200.0]
+    assert state["floor"] == 100.0
+    assert [_partstat(event) for event in stored.walk("VEVENT")] == [
+        "TENTATIVE",
+        "DECLINED",
+        "DECLINED",
+    ]
+
+
+@pytest.mark.usefixtures("reply_order")
 def test_old_reply_keeps_a_later_change_on_another_date():
     stored = ICalendar.from_ical(SERIES)
     _apply_to_resource(_reply((REGULAR, "DECLINED", 0)), stored, received_at=200.0)

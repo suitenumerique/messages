@@ -93,6 +93,11 @@ _REPLY_PARTSTATS = frozenset({"ACCEPTED", "DECLINED", "TENTATIVE"})
 # Seconds. More than the time in which the apply task retries a reply,
 # about 40 minutes.
 _REPLY_RETRY_TIME = 3600
+# Past this number of answers, the oldest replies go into the answers from
+# before the replies. A later reply that is older than them is superseded.
+# Each new reply applies the stored replies again, so the limit is on the
+# answers: a reply can have 100 of them.
+_MAX_REPLY_ORDER_ANSWERS = 100
 # The parameters of an attendee that a reply sets.
 _ANSWER_PARAMS = ("PARTSTAT", "RSVP", "SCHEDULE-STATUS")
 
@@ -799,6 +804,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     # Max number of answers read from one reply. An answer for an occurrence
     # can add an exception VEVENT to the stored event.
     _MAX_REPLY_ANSWERS = 100
+    _MAX_UID_CHARS = 255
+    # A reply adds at most one VEVENT for each date. Each is a copy of the
+    # series, so the event must not grow without limit.
+    _MAX_EVENT_COMPONENTS = 500
 
     @staticmethod
     def _parse_reply(ics_data, attendee_email):
@@ -812,8 +821,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
 
         The reasons are:
 
-        - ``unparseable-reply``: the ICS is bad, no VEVENT has a UID, or a
-          RECURRENCE-ID is invalid.
+        - ``unparseable-reply``: the ICS is bad, no VEVENT has a UID of at
+          most 255 characters, or a RECURRENCE-ID is invalid.
         - ``attendee-mismatch``: the attendee gives no ACCEPTED, DECLINED or
           TENTATIVE.
         - ``recurrence-not-supported``: an answer is for a range of
@@ -831,7 +840,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         saw_uid = False
         for comp in cal.walk("VEVENT"):
             uid = comp.get("UID")
-            if not uid:
+            # SabreDAV keeps at most 200 characters of a UID.
+            if not uid or len(str(uid)) > CalDAVService._MAX_UID_CHARS:
                 continue
             saw_uid = True
             if reply and str(uid) != reply["uid"]:
@@ -1094,14 +1104,22 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         }
 
     def _prune(self, stored, reply, state):
-        """Return ``state`` with its replies of the TTL.
+        """Return ``state`` with its newest replies of the TTL.
 
-        The older replies go into the answers from before the replies. A
-        later reply that is older than them is then superseded.
+        They have at most ``_MAX_REPLY_ORDER_ANSWERS`` answers in all, except
+        when the newest reply has more. The older replies go into the answers
+        from before the replies. A later reply that is older than them is
+        then superseded.
         """
         replies = state["replies"]
         oldest = replies[-1]["at"] - _reply_order_ttl()
         kept = [old for old in replies if old["at"] > oldest]
+        count = 0
+        for index in range(len(kept) - 1, -1, -1):
+            count += len(kept[index]["answers"])
+            if count > _MAX_REPLY_ORDER_ANSWERS and index < len(kept) - 1:
+                kept = kept[index + 1 :]
+                break
         if len(kept) == len(replies):
             return state
         dropped = replies[: len(replies) - len(kept)]
@@ -1277,6 +1295,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             for event in events.values()
         ) or (series is not None and (has_rdate_period(series) or "EXRULE" in series)):
             return "recurrence-not-supported"
+        if len(stored.subcomponents) >= CalDAVService._MAX_EVENT_COMPONENTS:
+            return "too-many-exceptions"
         exception = series and occurrence_override(series, recurrence_id)
         if exception is None:
             logger.info(
