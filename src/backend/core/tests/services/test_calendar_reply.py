@@ -597,7 +597,7 @@ def test_open_xchange_answer_for_an_excluded_date_is_ignored(caplog):
     assert outcomes == ["no-matching-occurrence"]
     assert len(events) == 2
     assert _partstat(events[0]) == "NEEDS-ACTION"
-    assert "not an occurrence of UID series@example.com" in caplog.text
+    assert "not an occurrence of UID 'series@example.com'" in caplog.text
 
 
 def test_sabredav_answer_for_an_occurrence_without_exception_adds_one():

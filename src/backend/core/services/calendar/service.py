@@ -934,7 +934,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     continue
                 return self._apply_reply_to_resource(resource_url, stored, etag, reply)
 
-        logger.info("No stored event matches iTIP REPLY UID %s", reply["uid"])
+        logger.info("No stored event matches iTIP REPLY UID %r", reply["uid"])
         return {"applied": False, "reason": "no-matching-event"}
 
     @staticmethod
@@ -1300,9 +1300,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         exception = series and occurrence_override(series, recurrence_id)
         if exception is None:
             logger.info(
-                "Ignoring iTIP REPLY answer for %s: not an occurrence of UID %s",
+                "Ignoring iTIP REPLY answer for %s: not an occurrence of UID %r",
                 recurrence_id.isoformat(),
-                series and series.get("UID"),
+                series and str(series.get("UID")),
             )
             return "no-matching-occurrence"
         outcome = self._set_partstat(exception, attendee_email, answer["partstat"])
