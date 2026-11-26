@@ -179,6 +179,10 @@ def verify_message_dkim(raw_mime_message: bytes) -> str | None:
         dkim_obj = DKIM(raw_mime_message)
         if not dkim_obj.verify(dnsfunc=get_dns_txt):
             return None
+        # With a body length tag, anyone can add unsigned content after the
+        # signed bytes. The message then passes but is not authentic.
+        if b"l" in dkim_obj.signature_fields:
+            return None
         signing_domain = dkim_obj.domain
         if not signing_domain:
             return None
