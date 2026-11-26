@@ -2,6 +2,7 @@
 # pylint: disable=missing-function-docstring,missing-class-docstring
 
 from core.mda import itip
+from core.mda.itip import ItipReplyFlag
 
 REPLY_ICS = """\
 BEGIN:VCALENDAR
@@ -55,7 +56,7 @@ def _parsed(ics, from_email):
 
 class TestDecide:
     def test_verified_applies_verified(self):
-        assert itip.decide(None, False) == (True, itip.FLAG_VERIFIED)
+        assert itip.decide(None, False) == (True, ItipReplyFlag.VERIFIED)
 
     def test_forged_never_applies(self):
         assert itip.decide("fail", False) == (False, None)
@@ -65,7 +66,7 @@ class TestDecide:
         assert itip.decide("none", False) == (False, None)
 
     def test_unverified_applied_when_opted_in(self):
-        assert itip.decide("none", True) == (True, itip.FLAG_UNVERIFIED)
+        assert itip.decide("none", True) == (True, ItipReplyFlag.UNVERIFIED)
 
 
 class TestReplyPartstat:
@@ -118,7 +119,7 @@ class TestEvaluateInboundReply:
         parsed = _parsed(REPLY_ICS, "alice@corp.example")
         ics, flag, attendee = itip.evaluate_inbound_reply(parsed, None, False)
         assert ics is not None
-        assert flag == itip.FLAG_VERIFIED
+        assert flag == ItipReplyFlag.VERIFIED
         assert attendee == "alice@corp.example"
 
     def test_from_with_a_letter_that_lowers_to_ascii_is_rejected(self):
@@ -151,7 +152,7 @@ class TestEvaluateInboundReply:
         parsed = _parsed(REPLY_ICS, "alice@corp.example")
         ics, flag, attendee = itip.evaluate_inbound_reply(parsed, "none", True)
         assert ics is not None
-        assert flag == itip.FLAG_UNVERIFIED
+        assert flag == ItipReplyFlag.UNVERIFIED
         assert attendee == "alice@corp.example"
 
     def test_no_reply_part(self):
@@ -165,6 +166,6 @@ class TestEvaluateInboundReply:
         parsed = _parsed(ics, "alice@corp.example")
         assert itip.evaluate_inbound_reply(parsed, None, False) == (
             ics,
-            itip.FLAG_VERIFIED,
+            ItipReplyFlag.VERIFIED,
             "alice@corp.example",
         )

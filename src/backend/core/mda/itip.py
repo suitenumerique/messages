@@ -1,6 +1,7 @@
 """Inbound iTIP (RFC 5546) ``METHOD:REPLY`` detection and trust gating."""
 
 import logging
+from enum import StrEnum
 
 from icalendar import Calendar as ICalendar
 from jmap_email import body_part_text, first_address_email
@@ -9,11 +10,20 @@ from core.services.calendar.service import attendee_key
 
 logger = logging.getLogger(__name__)
 
-_VERDICT_UNVERIFIED = "none"
-_VERDICT_FORGED = "fail"
 
-FLAG_VERIFIED = "verified"
-FLAG_UNVERIFIED = "unverified"
+class _AuthVerdict(StrEnum):
+    """Sender-auth verdict of an inbound message. No verdict means verified."""
+
+    UNVERIFIED = "none"
+    FORGED = "fail"
+
+
+class ItipReplyFlag(StrEnum):
+    """Trust level of an inbound REPLY. The postmark keeps it as ``itip-reply``."""
+
+    VERIFIED = "verified"
+    UNVERIFIED = "unverified"
+
 
 _CALENDAR_TYPE = "text/calendar"
 
@@ -25,25 +35,25 @@ _MAX_REPLY_ICS_CHARS = 512 * 1024
 def _iter_calendar_parts(parsed_email):
     """Yield every ``text/calendar`` EmailBodyPart in the message tree."""
     root = parsed_email.get("bodyStructure")
-    if root:
-        stack = [root]
-        while stack:
-            part = stack.pop()
-            if not isinstance(part, dict):
-                continue
-            sub = part.get("subParts")
-            if sub:
-                stack.extend(sub)
-                continue
-            if (part.get("type") or "").lower() == _CALENDAR_TYPE:
-                yield part
+    if not root:
+        for key in ("attachments", "textBody"):
+            for part in parsed_email.get(key) or []:
+                if isinstance(part, dict) and (part.get("type") or "").lower() == (
+                    _CALENDAR_TYPE
+                ):
+                    yield part
         return
-    for key in ("attachments", "textBody"):
-        for part in parsed_email.get(key) or []:
-            if isinstance(part, dict) and (part.get("type") or "").lower() == (
-                _CALENDAR_TYPE
-            ):
-                yield part
+    stack = [root]
+    while stack:
+        part = stack.pop()
+        if not isinstance(part, dict):
+            continue
+        sub = part.get("subParts")
+        if sub:
+            stack.extend(sub)
+            continue
+        if (part.get("type") or "").lower() == _CALENDAR_TYPE:
+            yield part
 
 
 def _part_ics_text(parsed_email, part):
@@ -80,9 +90,10 @@ def find_reply_ics(parsed_email):
 
 
 def reply_partstat(ics_text, addr):
-    """The PARTSTAT the ATTENDEE matching ``addr`` gives itself, or None.
+    """Return the PARTSTAT of the ATTENDEE ``addr``, or None.
 
-    Never returns another attendee's PARTSTAT — a REPLY may list several.
+    A REPLY can list more than one ATTENDEE. The PARTSTAT of another
+    attendee is never returned.
     """
     target = attendee_key(addr)
     if not target:
@@ -109,26 +120,29 @@ def reply_partstat(ics_text, addr):
 
 
 def decide(auth_verdict, apply_unverified):
-    """Trust decision from the sender-auth verdict → ``(should_apply, flag)``.
+    """Return ``(should_apply, flag)`` for the sender-auth verdict.
 
-    ``fail`` never applies; ``none`` applies only with ``apply_unverified``
-    (flagged unverified); absent verdict = verified.
+    A ``fail`` verdict never applies. A ``none`` verdict applies only with
+    ``apply_unverified``, with the flag ``unverified``. No verdict means a
+    verified sender.
     """
-    if auth_verdict == _VERDICT_FORGED:
+    if auth_verdict == _AuthVerdict.FORGED:
         return False, None
-    if auth_verdict == _VERDICT_UNVERIFIED:
+    if auth_verdict == _AuthVerdict.UNVERIFIED:
         if not apply_unverified:
             return False, None
-        return True, FLAG_UNVERIFIED
-    return True, FLAG_VERIFIED
+        return True, ItipReplyFlag.UNVERIFIED
+    return True, ItipReplyFlag.VERIFIED
 
 
 def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
-    """Detect + gate an inbound REPLY → ``(ics, flag, attendee)`` or all-None.
+    """Find and check an inbound REPLY.
 
-    ``attendee`` is the authenticated From — the only identity the apply path
-    may act on. Requiring it to be an ATTENDEE with a PARTSTAT blocks a crafted
-    reply whose aligned From is PARTSTAT-less while another ATTENDEE carries one.
+    Returns ``(ics, flag, attendee)``, or three None when the REPLY does not
+    apply. ``attendee`` is the authenticated From address. It is the only
+    identity that the apply path can change. The From address must be an
+    ATTENDEE with a PARTSTAT. This stops a crafted reply where the From
+    ATTENDEE has no PARTSTAT and another ATTENDEE has one.
     """
     ics = find_reply_ics(parsed_email)
     if ics is None:

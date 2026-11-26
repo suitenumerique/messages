@@ -269,6 +269,35 @@ def _abandon(inbound_message: models.InboundMessage, reason: str) -> Dict[str, A
     }
 
 
+def _itip_reply_to_apply(ctx, inbound_message, mailbox, deferral_expired):
+    """Return the ICS and the attendee of an iTIP REPLY to apply.
+
+    Returns ``(None, None)`` when the message has no REPLY to apply. Else,
+    records the trust flag of the REPLY in the postmark.
+    """
+    if not settings.CALENDAR_ITIP_REPLY_ENABLED or ctx.is_spam or deferral_expired:
+        return None, None
+    # An absent verdict is not sufficient to write to a calendar: it does not
+    # prove the From address. Internal mail comes from an authenticated
+    # mailbox. Other mail needs an aligned From.
+    auth_verdict = ctx.postmark.get("auth")
+    if auth_verdict is None and not (
+        inbound_message.is_internal or ctx.from_authenticated
+    ):
+        auth_verdict = "none"
+    ics, itip_flag, attendee = itip.evaluate_inbound_reply(
+        ctx.parsed_email,
+        auth_verdict,
+        settings.CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED,
+    )
+    # Without a calendar backend, the flag would claim an update that never
+    # happens.
+    if not ics or not _caldav_configured(mailbox):
+        return None, None
+    ctx.postmark["itip-reply"] = itip_flag
+    return ics, attendee
+
+
 def _caldav_configured(mailbox: models.Mailbox) -> bool:
     """Whether a CalDAV backend is reachable: instance-default or per-mailbox."""
     from core.enums import ChannelTypes  # pylint: disable=import-outside-toplevel
@@ -286,22 +315,23 @@ def _enqueue_itip_reply(
     attendee_email: str,
     received_at: float | None = None,
 ) -> None:
-    """Fan an authorized inbound iTIP REPLY out to CalDAV apply tasks.
+    """Start the tasks that apply an inbound iTIP REPLY.
 
-    Prefers a per-mailbox CalDAV channel; else one task per mailbox user. The
-    fan-out is intentional for shared mailboxes: the organizer event lives on
-    whichever member's principal created it (not recorded here), so every
-    principal is tried and ``apply_reply`` no-ops where the UID isn't present.
-    ``attendee_email`` is the verified sender — the only ATTENDEE apply may
-    touch. ``received_at`` is the time when the mailbox received the reply, in
-    seconds: it gives the order of the replies of one attendee. Lazy imports
-    avoid a task-module import cycle.
+    Each active CalDAV channel of the mailbox gets one task. Without such a
+    channel, each user of the mailbox gets one task. In a shared mailbox, any
+    user can hold the event of the organizer. ``apply_reply`` does nothing
+    where the UID is absent.
 
-    TODO(itip-ratelimit): a sender with their own DMARC-passing domain can still
-    drive one time-range REPORT per writable calendar per crafted reply. If a
-    per-(sender-domain, mailbox) rate-limit primitive lands, apply it here; there
-    is no reusable one for the inbound-task path today.
+    ``attendee_email`` is the verified sender. It is the only ATTENDEE that
+    the task can change. ``received_at`` is the time when the mailbox
+    received the reply, in seconds. It gives the order of the replies.
+
+    TODO(itip-ratelimit): a sender with a domain that passes DMARC can send
+    crafted replies. Each reply makes one time-range REPORT for each writable
+    calendar. Add a rate limit per sender domain and mailbox here when the
+    project has one.
     """
+    # These imports are here to prevent an import cycle between task modules.
     from core.enums import (  # pylint: disable=import-outside-toplevel
         ChannelTypes,
     )
@@ -550,32 +580,9 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Same reasoning for how the message arrived: only the envelope knows.
         _record_transport_security(ctx.postmark, inbound_message.envelope or {})
 
-        itip_reply_ics = None
-        itip_reply_attendee = None
-        if (
-            settings.CALENDAR_ITIP_REPLY_ENABLED
-            and not ctx.is_spam
-            and not deferral_expired
-        ):
-            # An absent verdict is not sufficient to write to a calendar: it
-            # does not prove the From address. Internal mail comes from an
-            # authenticated mailbox. Other mail needs an aligned From.
-            auth_verdict = ctx.postmark.get("auth")
-            if auth_verdict is None and not (
-                inbound_message.is_internal or ctx.from_authenticated
-            ):
-                auth_verdict = "none"
-            ics, itip_flag, attendee = itip.evaluate_inbound_reply(
-                ctx.parsed_email,
-                auth_verdict,
-                settings.CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED,
-            )
-            # Only stamp provenance + enqueue when a calendar backend exists —
-            # else the flag would claim an update that never happened.
-            if ics and _caldav_configured(mailbox):
-                itip_reply_ics = ics
-                itip_reply_attendee = attendee
-                ctx.postmark["itip-reply"] = itip_flag
+        itip_reply_ics, itip_reply_attendee = _itip_reply_to_apply(
+            ctx, inbound_message, mailbox, deferral_expired
+        )
 
         with transaction.atomic():
             inbound_msg = _create_message_from_inbound(

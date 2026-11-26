@@ -2942,7 +2942,9 @@ class TestApplyReply:
         put_calls = []
 
         with (
-            mock.patch.object(service, "_get_resource", return_value=(None, "")),
+            mock.patch.object(
+                service, "_get_resource", return_value=(stored.to_ical().decode(), "")
+            ),
             mock.patch.object(
                 service,
                 "_put_resource",

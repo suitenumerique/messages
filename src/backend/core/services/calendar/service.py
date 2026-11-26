@@ -801,19 +801,22 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def _parse_reply(ics_data, attendee_email):
-        """Return ``(reply, None)`` for a usable REPLY, else ``(None, reason)``.
+        """Read the answers of ``attendee_email`` from a REPLY.
 
-        The reply has one answer for each VEVENT in which ``attendee_email`` is
-        an ATTENDEE with an answer. The PARTSTAT of another ATTENDEE is never
-        read. The first of these VEVENTs gives the UID and the time of the
-        reply. A VEVENT with a different UID gives no answer.
+        Returns ``(reply, None)``, or ``(None, reason)`` when the REPLY is not
+        usable. The reply has one answer for each VEVENT where the attendee
+        gives a PARTSTAT. The PARTSTAT of other attendees is never read. The
+        first of these VEVENTs gives the UID and the dates of the event. A
+        VEVENT with another UID gives no answer.
 
-        The reason is ``unparseable-reply`` for a bad ICS, or when the UID, the
-        DTSTART or a RECURRENCE-ID is absent or invalid. It is
-        ``attendee-mismatch`` when the attendee gives no PARTSTAT that can be
-        applied: ACCEPTED, DECLINED or TENTATIVE. It is
-        ``recurrence-not-supported`` when an answer is for a range of
-        occurrences.
+        The reasons are:
+
+        - ``unparseable-reply``: the ICS is bad, or a UID, DTSTART or
+          RECURRENCE-ID is absent or invalid.
+        - ``attendee-mismatch``: the attendee gives no ACCEPTED, DECLINED or
+          TENTATIVE.
+        - ``recurrence-not-supported``: an answer is for a range of
+          occurrences.
         """
         target = attendee_key(attendee_email)
         if not target:
@@ -882,39 +885,34 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     def apply_reply(
         self, ics_data, attendee_email, organizer_email=None, received_at=None
     ):
-        """Apply an inbound iTIP ``METHOD:REPLY`` to the organizer's stored event.
+        """Apply an inbound iTIP REPLY to the stored event of the organizer.
 
-        Mirror of ``respond_to_event``. Only ever modifies the ATTENDEE matching
-        ``attendee_email`` (the caller's authenticated sender), reading its
-        PARTSTAT from that same entry — so a crafted multi-ATTENDEE payload can't
-        move a third party. When ``organizer_email`` is given, only a stored copy
-        whose ORGANIZER matches it is updated — so a same-UID copy on which the
-        mailbox is merely an ATTENDEE (not the organizer) is skipped. Returns
-        ``{"applied": bool, "reason": str}``; never raises for expected no-ops.
+        Only the ATTENDEE ``attendee_email``, the authenticated sender, changes.
+        Its PARTSTAT comes from its own entry in the REPLY, so a crafted REPLY
+        cannot change another attendee. When ``organizer_email`` is given, only
+        a stored event with that ORGANIZER changes. Returns ``{"applied": bool,
+        "reason": str}``. An expected no-op does not raise.
 
-        An answer with RECURRENCE-ID goes to the exception of that occurrence,
-        as in SabreDAV. When the occurrence has no exception, a new one holds
-        the answer. An answer without RECURRENCE-ID goes to the series. Unlike
-        SabreDAV, it also goes to the exceptions that the reply does not name,
-        see ``_apply_series_answer``.
+        An answer with a RECURRENCE-ID goes to that occurrence. When the
+        occurrence has no exception, a new exception holds the answer. An
+        answer without RECURRENCE-ID goes to the series. Unlike SabreDAV, it
+        also goes to the exceptions that the reply does not name, see
+        ``_apply_series_answer``.
 
-        The SEQUENCE and DTSTAMP of the reply are not compared with the stored
-        event, as in SabreDAV. SabreDAV sends an update only to the attendees
-        that the change affects, so an attendee can have an older SEQUENCE and
-        a valid answer. An answer to an older version of the event, for example
-        an older time, is applied too. RFC 5546 lets the organizer accept it.
+        As SabreDAV does, it does not compare SEQUENCE or DTSTAMP. SabreDAV
+        sends an update only to the attendees that a change affects, so a
+        valid answer can have an older SEQUENCE. An answer to an older version
+        of the event is applied too. RFC 5546 lets the organizer accept it.
 
         ``received_at`` is the time when the mailbox received the reply, in
-        seconds. The apply task can retry an old reply after a new one. The
-        result is the same as in the order of arrival, see
-        ``_apply_in_order``. When the newer replies hide the old reply, the
-        reason is ``superseded``.
+        seconds. The task can retry an old reply after a newer one. The result
+        is the same as in the order of arrival, see ``_apply_in_order``. When
+        the newer replies hide the old reply, the reason is ``superseded``.
 
-        Does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
-        controls the messages that an attendee's server sends to the organizer
-        (RFC 6638 §7.1). It does not stop the updates to attendees. It also
-        stays in the stored event: an attendee copy that receives it sends no
-        REPLY for later answers.
+        It does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
+        controls the messages from the server of an attendee (RFC 6638 §7.1),
+        not the updates to attendees. It also stays in the stored event, and an
+        attendee copy with it sends no REPLY for later answers.
         """
         reply, reason = self._parse_reply(ics_data, attendee_email)
         if reply is None:
@@ -962,19 +960,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         CalDAVTransientError, so that the task tries again later.
         """
         if not etag:
-            # The REPORT returned no etag; fetch one so the write stays
-            # conditional. Never PUT unconditionally — that would silently drop
-            # lost-update protection.
-            fresh_ics, etag = self._get_resource(resource_url)
-            if not etag or fresh_ics is None:
-                logger.warning(
-                    "No etag for %s; refusing unconditional iTIP write", resource_url
-                )
-                return {"applied": False, "reason": "no-etag"}
-            try:
-                stored = ICalendar.from_ical(fresh_ics)
-            except Exception:  # pylint: disable=broad-exception-caught
-                return {"applied": False, "reason": "no-etag"}
+            # The REPORT gave no ETag.
+            stored, etag, reason = self._read_again(resource_url)
+            if reason:
+                return {"applied": False, "reason": reason}
         state_key = _reply_order_key(resource_url, reply["attendee"])
         saved = cache.get(state_key)
         for attempt in (1, 2):
@@ -1008,21 +997,31 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     raise CalDAVTransientError(
                         "The event changes during the write", status_code=412
                     ) from exc
-                fresh_ics, etag = self._get_resource(resource_url)
-                if fresh_ics is None:
-                    return {"applied": False, "reason": "concurrent-modification"}
-                if not etag:
-                    # As before the first attempt: never PUT without If-Match.
-                    logger.warning(
-                        "No etag for %s; refusing unconditional iTIP write",
-                        resource_url,
-                    )
-                    return {"applied": False, "reason": "no-etag"}
-                try:
-                    stored = ICalendar.from_ical(fresh_ics)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    return {"applied": False, "reason": "concurrent-modification"}
+                stored, etag, reason = self._read_again(resource_url)
+                if reason:
+                    return {"applied": False, "reason": reason}
         return {"applied": False, "reason": "concurrent-modification"}
+
+    def _read_again(self, resource_url):
+        """Read the event of the reply again, with its ETag.
+
+        Returns ``(stored, etag, None)``, or ``(None, None, reason)`` when the
+        event cannot take the reply. A write needs the ETag: a PUT without
+        If-Match can lose a change of someone else.
+        """
+        ics, etag = self._get_resource(resource_url)
+        if ics is None:
+            return None, None, "concurrent-modification"
+        if not etag:
+            logger.warning(
+                "No etag for %s; refusing unconditional iTIP write", resource_url
+            )
+            return None, None, "no-etag"
+        try:
+            stored = ICalendar.from_ical(ics)
+        except Exception:  # pylint: disable=broad-exception-caught
+            return None, None, "concurrent-modification"
+        return stored, etag, None
 
     @staticmethod
     def _save_state(state_key, state):
