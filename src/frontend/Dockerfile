@@ -29,6 +29,8 @@ USER ${DOCKER_USER}
 # image; the dev/tools services use the lean frontend-dev-base above instead.
 # .npmrc sets install-strategy=linked (symlinked/deduplicated node_modules).
 FROM frontend-dev-base AS frontend-deps
+
+ARG DOCKER_USER=1000
 COPY --chown=${DOCKER_USER} package*.json .npmrc ./
 RUN npm ci
 
