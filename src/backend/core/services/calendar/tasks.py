@@ -9,6 +9,9 @@ from django.core.cache import cache
 
 from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
+from django_redis.exceptions import ConnectionInterrupted
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sentry_sdk import capture_exception
 
 from core.enums import ChannelTypes
@@ -146,6 +149,17 @@ def calendar_rsvp_task(
         }
 
 
+# The cache holds the lock and the order of the replies. Redis can stop for
+# a time, like the CalDAV server.
+_APPLY_REPLY_RETRY_ERRORS = (
+    CalDAVTransientError,
+    SoftTimeLimitExceeded,
+    ConnectionInterrupted,
+    RedisConnectionError,
+    RedisTimeoutError,
+)
+
+
 @contextmanager
 def _apply_reply_lock(organizer_email: str):
     """Let one task at a time apply a reply to the calendar of one organizer.
@@ -186,7 +200,7 @@ def _apply_reply_lock(organizer_email: str):
 @celery_app.task(
     bind=True,
     ignore_result=True,
-    autoretry_for=(CalDAVTransientError, SoftTimeLimitExceeded),
+    autoretry_for=_APPLY_REPLY_RETRY_ERRORS,
     retry_backoff=30,
     retry_backoff_max=600,
     max_retries=5,
@@ -253,7 +267,7 @@ def calendar_apply_reply_task(
             "result": result,
             "error": None,
         }
-    except (CalDAVTransientError, SoftTimeLimitExceeded):
+    except _APPLY_REPLY_RETRY_ERRORS:
         raise
     except CalDAVError as e:
         logger.warning("Apply-reply failed: %s", e)

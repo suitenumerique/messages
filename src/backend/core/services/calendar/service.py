@@ -269,12 +269,15 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """Calendar-home-set URL, resolved lazily via principal discovery.
 
         Falls back to the configured URL if discovery fails (for servers or
-        URLs that already point directly at the home set).
+        URLs that already point directly at the home set). A transient error
+        does not fall back: it propagates, so that the caller can try again.
         """
         if self._home_set is not None:
             return self._home_set
         try:
             self._home_set = self._discover_home_set() or self.url
+        except CalDAVTransientError:
+            raise
         except (CalDAVError, DefusedParseError, AttributeError) as exc:
             # CalDAVError: protocol/HTTP/network. DefusedParseError: malformed
             # PROPFIND XML. AttributeError: a defusedxml node was None where
@@ -941,8 +944,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
 
         If-Match on ``etag`` guards the lost-update race (concurrent replies, or
         a reply racing the organizer's own edit). On 412 the resource is
-        re-fetched and the mutation re-applied once, then it gives up with
-        ``concurrent-modification``.
+        re-fetched and the mutation re-applied once. A second 412 raises
+        CalDAVTransientError, so that the task tries again later.
         """
         if not etag:
             # The REPORT returned no etag; fetch one so the write stays
@@ -987,7 +990,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 if exc.status_code != 412:
                     raise
                 if attempt == 2:
-                    return {"applied": False, "reason": "concurrent-modification"}
+                    # The organizer lock does not stop the edits of a calendar
+                    # client. Do not lose the answer: try again later.
+                    raise CalDAVTransientError(
+                        "The event changes during the write", status_code=412
+                    ) from exc
                 fresh_ics, etag = self._get_resource(resource_url)
                 if fresh_ics is None:
                     return {"applied": False, "reason": "concurrent-modification"}

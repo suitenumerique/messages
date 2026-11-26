@@ -8,7 +8,11 @@ from django.core.cache import cache
 import pytest
 from icalendar import Calendar as ICalendar
 
-from core.services.calendar.service import CalDAVError, CalDAVService
+from core.services.calendar.service import (
+    CalDAVError,
+    CalDAVService,
+    CalDAVTransientError,
+)
 
 ATTENDEE = "attendee@example.com"
 OTHER = "other@example.com"
@@ -240,23 +244,6 @@ def test_answer_for_one_date_does_not_change_a_change_for_this_and_future():
     assert _partstat(events[1]) == "NEEDS-ACTION"
 
 
-@pytest.mark.parametrize("series_first", [True, False])
-def test_reply_with_an_answer_for_the_series_and_for_an_occurrence_without_exception(
-    series_first,
-):
-    answers = [(None, "ACCEPTED", 0), (REGULAR, "DECLINED", 0)]
-    if not series_first:
-        answers.reverse()
-
-    outcomes, (series, moved, added) = _apply(_reply(*answers))
-
-    assert outcomes == ["applied", "applied"]
-    assert _partstat(series) == "ACCEPTED"
-    assert _partstat(moved) == "ACCEPTED"
-    assert _partstat(added) == "DECLINED"
-    assert _partstat(added, OTHER) == "NEEDS-ACTION"
-
-
 def test_no_exception_for_a_series_with_an_exclusion_rule():
     # EXRULE removes each date until 23 March, also 16 March.
     stored = ICalendar.from_ical(
@@ -287,6 +274,37 @@ def test_no_exception_for_a_series_with_an_rdate_period():
 
     assert outcomes == ["recurrence-not-supported"]
     assert len(events) == 2
+
+
+def test_transient_error_in_discovery_is_not_a_missing_event():
+    service = CalDAVService(url="http://caldav.example/")
+
+    with (
+        mock.patch.object(
+            service, "_discover_home_set", side_effect=CalDAVTransientError("503")
+        ),
+        pytest.raises(CalDAVTransientError),
+    ):
+        service.apply_reply(_reply((REGULAR, "DECLINED", 0)), ATTENDEE)
+
+    assert service._home_set is None
+
+
+@pytest.mark.parametrize("series_first", [True, False])
+def test_reply_with_an_answer_for_the_series_and_for_an_occurrence_without_exception(
+    series_first,
+):
+    answers = [(None, "ACCEPTED", 0), (REGULAR, "DECLINED", 0)]
+    if not series_first:
+        answers.reverse()
+
+    outcomes, (series, moved, added) = _apply(_reply(*answers))
+
+    assert outcomes == ["applied", "applied"]
+    assert _partstat(series) == "ACCEPTED"
+    assert _partstat(moved) == "ACCEPTED"
+    assert _partstat(added) == "DECLINED"
+    assert _partstat(added, OTHER) == "NEEDS-ACTION"
 
 
 def test_answer_for_an_occurrence_before_a_new_answer_for_the_series():

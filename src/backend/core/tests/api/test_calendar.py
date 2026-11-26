@@ -22,8 +22,10 @@ import radicale.config
 import requests
 import requests.adapters
 from celery.exceptions import SoftTimeLimitExceeded
+from django_redis.exceptions import ConnectionInterrupted
 from icalendar import Calendar as ICalendar
 from jmap_email import parse_email
+from redis.exceptions import ConnectionError as RedisConnectionError
 from rest_framework.test import APIClient
 
 from core import factories, models
@@ -3094,7 +3096,7 @@ class TestApplyReply:
         assert len(puts) == 2  # first 412, refetch + retry succeeded
         assert puts[1] == "etag-2"  # retry used the freshly-fetched etag
 
-    def test_conditional_put_gives_up_after_second_412(self, caldav_channel):
+    def test_conditional_put_retries_later_after_second_412(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
         stored = ICalendar.from_ical(
             _ORGANIZER_EVENT.format(uid="retry", seq=0, attendee=self.ATTENDEE)
@@ -3110,12 +3112,11 @@ class TestApplyReply:
         with (
             mock.patch.object(service, "_put_resource", side_effect=always_412),
             mock.patch.object(service, "_get_resource", return_value=(fresh, "etag-2")),
+            pytest.raises(CalDAVTransientError),
         ):
-            result = service._apply_reply_to_resource(
+            service._apply_reply_to_resource(
                 "http://x/retry.ics", stored, "etag-1", reply
             )
-
-        assert result == {"applied": False, "reason": "concurrent-modification"}
 
 
 @pytest.mark.django_db()
@@ -3352,6 +3353,16 @@ def test_apply_reply_task_retries_a_transient_caldav_error():
 
 def test_apply_reply_task_does_not_retry_a_permanent_caldav_error():
     apply_reply = _run_apply_reply_task([CalDAVError("forbidden", status_code=403)])
+    assert apply_reply.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ConnectionInterrupted(connection=None), RedisConnectionError("down")],
+)
+def test_apply_reply_task_retries_when_the_cache_fails(error):
+    with mock.patch.object(cache, "add", side_effect=[error, True]):
+        apply_reply = _run_apply_reply_task([{"applied": True, "reason": "applied"}])
     assert apply_reply.call_count == 1
 
 
