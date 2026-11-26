@@ -2914,14 +2914,14 @@ class TestApplyReply:
         assert result["applied"] is False
         assert result["reason"] == "unparseable-reply"
 
-    def test_reply_without_dtstart_is_unparseable(self, caldav_channel):
-        service = CalDAVService.from_channel(caldav_channel)
+    def test_reply_without_dtstart_parses(self):
+        # RFC 5546 makes DTSTART optional in a REPLY. The lookup uses the UID.
         reply = self._reply("no-dtstart@example.com").replace(
             "DTSTART:20260601T100000Z\n", ""
         )
-        result = service.apply_reply(reply, attendee_email=self.ATTENDEE)
-        assert result["applied"] is False
-        assert result["reason"] == "unparseable-reply"
+        parsed, reason = CalDAVService._parse_reply(reply, self.ATTENDEE)
+        assert reason is None
+        assert parsed["uid"] == "no-dtstart@example.com"
 
     def test_reply_without_dtstamp_parses(self):
         reply = self._reply("no-dtstamp@example.com").replace(
@@ -2958,16 +2958,6 @@ class TestApplyReply:
         assert result == {"applied": False, "reason": "no-etag"}
         assert not put_calls  # never PUT without a precondition
 
-    def test_query_window_bounds_extreme_range(self, caldav_channel):
-        service = CalDAVService.from_channel(caldav_channel)
-        reply = {
-            "start": datetime(1, 1, 1, tzinfo=timezone.utc),
-            "end": datetime(9999, 12, 31, tzinfo=timezone.utc),
-        }
-        start, end = service._reply_query_window(reply)  # must not overflow
-        assert start < end
-        assert (end - start).days <= service._MAX_QUERY_SPAN_DAYS + 3
-
     def test_skips_non_organizer_copy(self, caldav_channel):
         # Two same-UID copies: one where the mailbox is merely an attendee
         # (ORGANIZER=someone else), one it actually organizes. Only the latter
@@ -2988,7 +2978,7 @@ class TestApplyReply:
             ),
             mock.patch.object(
                 service,
-                "_calendar_query_detailed",
+                "_find_by_uid",
                 return_value=[
                     (service.url + "cal/attendee.ics", "e1", attendee_copy),
                     (service.url + "cal/organizer.ics", "e2", organizer_copy),
@@ -3200,6 +3190,45 @@ def test_reply_to_a_moved_occurrence_updates_its_exception(
         for event in ICalendar.from_ical(resp.text).walk("VEVENT")
     }
     assert partstats == {False: "NEEDS-ACTION", True: "DECLINED"}
+
+
+@pytest.mark.django_db()
+def test_reply_finds_a_series_without_an_occurrence_at_its_start(
+    caldav_channel, radicale_with_calendar
+):
+    # The organizer removed the first occurrence. The reply for the series
+    # has the DTSTART of the series, where the series has no occurrence.
+    calendar_url, put_event = radicale_with_calendar
+    uid = "apply-first-excluded@example.com"
+    attendee = TestApplyReply.ATTENDEE
+    put_event(
+        uid,
+        _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=attendee).replace(
+            "SEQUENCE:0",
+            "SEQUENCE:0\nRRULE:FREQ=WEEKLY;COUNT=8\nEXDATE:20260601T100000Z",
+        ),
+    )
+    service = CalDAVService.from_channel(caldav_channel)
+
+    result = service.apply_reply(
+        _REPLY_EVENT.format(
+            uid=uid,
+            seq=0,
+            dtstamp="20260102T000000Z",
+            partstat="ACCEPTED",
+            attendee=attendee,
+        ),
+        attendee_email=attendee,
+    )
+
+    assert result == {"applied": True, "reason": "applied"}
+    resp = requests.get(
+        calendar_url.rstrip("/") + f"/{uid}.ics",
+        auth=(RADICALE_USER, RADICALE_PASSWORD),
+        timeout=5,
+    )
+    (series,) = ICalendar.from_ical(resp.text).walk("VEVENT")
+    assert _attendee_partstat(series, attendee) == "ACCEPTED"
 
 
 @pytest.mark.django_db()

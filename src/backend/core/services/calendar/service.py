@@ -12,9 +12,10 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from urllib.parse import quote, unquote, urljoin, urlparse
+from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings as django_settings
 from django.core.cache import cache
@@ -605,11 +606,11 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if (data := r.findtext(data_key))
         ]
 
-    def _calendar_query_detailed(self, calendar_url, start, end):
-        """Like ``_calendar_query`` but yields ``(href, etag, calendar_data)``.
+    def _find_by_uid(self, calendar_url, uid):
+        """Return ``(href, etag, calendar_data)`` for each event with ``uid``.
 
-        The href is the event's real resource path and the etag its version —
-        both needed to write back to the right resource with If-Match.
+        The href is the real path of the resource and the etag its version.
+        A write back needs both, with If-Match.
         """
         body = (
             '<?xml version="1.0"?>'
@@ -618,7 +619,9 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             "<c:filter>"
             '<c:comp-filter name="VCALENDAR">'
             '<c:comp-filter name="VEVENT">'
-            f'<c:time-range start="{_format_utc(start)}" end="{_format_utc(end)}"/>'
+            '<c:prop-filter name="UID">'
+            f'<c:text-match collation="i;octet">{xml_escape(uid)}</c:text-match>'
+            "</c:prop-filter>"
             "</c:comp-filter>"
             "</c:comp-filter>"
             "</c:filter>"
@@ -792,9 +795,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         )
         return True
 
-    # Max span of the (attacker-controlled) reply time-range REPORT window.
-    _MAX_QUERY_SPAN_DAYS = 366
-
     # Max number of answers read from one reply. An answer for an occurrence
     # can add an exception VEVENT to the stored event.
     _MAX_REPLY_ANSWERS = 100
@@ -806,13 +806,13 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         Returns ``(reply, None)``, or ``(None, reason)`` when the REPLY is not
         usable. The reply has one answer for each VEVENT where the attendee
         gives a PARTSTAT. The PARTSTAT of other attendees is never read. The
-        first of these VEVENTs gives the UID and the dates of the event. A
-        VEVENT with another UID gives no answer.
+        first of these VEVENTs gives the UID. A VEVENT with another UID gives
+        no answer.
 
         The reasons are:
 
-        - ``unparseable-reply``: the ICS is bad, or a UID, DTSTART or
-          RECURRENCE-ID is absent or invalid.
+        - ``unparseable-reply``: the ICS is bad, no VEVENT has a UID, or a
+          RECURRENCE-ID is invalid.
         - ``attendee-mismatch``: the attendee gives no ACCEPTED, DECLINED or
           TENTATIVE.
         - ``recurrence-not-supported``: an answer is for a range of
@@ -854,22 +854,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 if recurrence_id.params.get("RANGE"):
                     return None, "recurrence-not-supported"
             if not reply:
-                start = _date_value(comp.get("DTSTART"))
-                if start is None:
-                    # RFC 5546 makes DTSTART optional in a REPLY, but in practice
-                    # every mainstream client echoes it; without it we can't bound
-                    # the calendar-query REPORT, so reject rather than scan every
-                    # calendar over an unbounded window. If minimal replies ever
-                    # turn up in the field, a bounded (~±60 day) fallback is the
-                    # escape hatch.
-                    return None, "unparseable-reply"
-                reply = {
-                    "uid": str(uid),
-                    "attendee": target,
-                    "start": start,
-                    "end": _date_value(comp.get("DTEND")),
-                    "answers": [],
-                }
+                reply = {"uid": str(uid), "attendee": target, "answers": []}
             if len(reply["answers"]) == CalDAVService._MAX_REPLY_ANSWERS:
                 break
             reply["answers"].append(
@@ -920,11 +905,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
 
         reply["received_at"] = received_at
         organizer_norm = attendee_key(organizer_email)
-        start, end = self._reply_query_window(reply)
 
         for calendar in self.list_calendars(writable_only=True):
-            for resource_url, etag, stored_ics in self._calendar_query_detailed(
-                calendar["id"], start, end
+            for resource_url, etag, stored_ics in self._find_by_uid(
+                calendar["id"], reply["uid"]
             ):
                 try:
                     stored = ICalendar.from_ical(stored_ics)
@@ -1381,34 +1365,6 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             if str(comp.get("UID") or "") == uid:
                 return True
         return False
-
-    def _reply_query_window(self, reply):
-        """(start, end) TZ-aware UTC window (± a day) around the reply's event
-        time. DTSTART is guaranteed present by ``_parse_reply``.
-
-        DTSTART/DTEND are attacker-controlled, so the window is normalized
-        (inverted ranges collapsed), the span capped, and the ± day padding
-        clamped to safe absolute bounds to avoid datetime over/underflow.
-        """
-        start = self._as_utc(reply["start"])
-        end = self._as_utc(reply["end"] or reply["start"])
-        end = max(end, start)
-        max_span = timedelta(days=self._MAX_QUERY_SPAN_DAYS)
-        if end - start > max_span:
-            end = start + max_span
-        floor = datetime(1, 1, 2, tzinfo=timezone.utc)
-        ceil = datetime(9999, 12, 30, tzinfo=timezone.utc)
-        start = max(min(start, ceil), floor) - timedelta(days=1)
-        end = min(max(end, floor), ceil) + timedelta(days=1)
-        return start, end
-
-    @staticmethod
-    def _as_utc(dt):
-        if not isinstance(dt, datetime):
-            dt = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc)
-        elif dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
 
     @staticmethod
     def _set_schedule_agent_client(cal):
