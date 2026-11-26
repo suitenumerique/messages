@@ -38,6 +38,7 @@ from email.utils import (
     getaddresses,
     parsedate_to_datetime,
 )
+from itertools import pairwise
 from typing import Any, cast
 
 from .addresses import is_valid_addr_spec
@@ -676,10 +677,22 @@ def _last_separator_index(value: str, limit: int) -> int:
     Cutting at those leaves a fragment that re-parses into an address
     nobody sent — ``a@[1,2]`` cut at its comma yields ``a@[1]``.
     """
+    separators = _separator_indexes(value, limit)
+    return separators[-1] if separators else -1
+
+
+def _split_mailboxes(value: str) -> list[str]:
+    """Split a mailbox list at its top-level commas."""
+    bounds = [-1, *_separator_indexes(value, len(value)), len(value)]
+    return [value[start + 1 : end] for start, end in pairwise(bounds)]
+
+
+def _separator_indexes(value: str, limit: int) -> list[int]:
+    """Indexes of the top-level mailbox-list commas before *limit*."""
     in_quote = False
     in_literal = False
     comment_depth = 0
-    last = -1
+    separators: list[int] = []
     index = 0
     end = min(len(value), limit)
     while index < end:
@@ -703,9 +716,9 @@ def _last_separator_index(value: str, limit: int) -> int:
         elif char == "(":
             comment_depth = 1
         elif char == ",":
-            last = index
+            separators.append(index)
         index += 1
-    return last
+    return separators
 
 
 def parse_addresses(
@@ -789,16 +802,28 @@ def _parse_addresses_ex(
         if not addresses_str:
             return [], truncated  # Empty group like "undisclosed-recipients:;"
 
-    try:
-        parsed = getaddresses([addresses_str], strict=False)
-    except RecursionError:
-        # Defense vs CVE-2002-1337 Sendmail-crackaddr-shape inputs:
-        # stdlib's ``_parseaddr.getcomment`` recurses without bound
-        # on nested ``(...)`` comments and can blow Python's recursion
-        # limit. Degrade to empty rather than letting the error
-        # propagate.
-        logger.warning("RecursionError in getaddresses; returning empty list")
-        return [], truncated
+    parsed: list[tuple[str, str]] = []
+    for mailbox in _split_mailboxes(addresses_str):
+        try:
+            tuples = getaddresses([mailbox], strict=False)
+        except RecursionError:
+            # Defense vs CVE-2002-1337 Sendmail-crackaddr-shape inputs:
+            # stdlib's ``_parseaddr.getcomment`` recurses without bound
+            # on nested ``(...)`` comments and can blow Python's recursion
+            # limit. Degrade to empty rather than letting the error
+            # propagate.
+            logger.warning("RecursionError in getaddresses; returning empty list")
+            return [], truncated
+        # One mailbox can give more than one tuple. In
+        # ``victim@bank.com <attacker@evil.co>`` the display name looks
+        # like an address. A DMARC check reads the angle-addr, so a
+        # consumer that keys on the first tuple trusts an address that
+        # the sender only named. Keep the angle-addr, as
+        # :func:`parse_address` does.
+        if len(tuples) > 1 and "<" in mailbox:
+            best = _pick_best_address(tuples)
+            tuples = [best] if best else []
+        parsed.extend(tuples)
 
     result: list[tuple[str, str]] = []
     for raw_name, raw_addr in parsed:
