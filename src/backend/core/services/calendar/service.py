@@ -26,7 +26,11 @@ from icalendar import Calendar as ICalendar
 
 from core.mda.addresses import ascii_lower, normalize_address
 from core.services.calendar.ics_rebuild import rebuild_for_storage
-from core.services.calendar.recurrence import recurrence_key
+from core.services.calendar.recurrence import (
+    has_rdate_period,
+    occurrence_override,
+    recurrence_key,
+)
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -786,6 +790,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     # Max span of the (attacker-controlled) reply time-range REPORT window.
     _MAX_QUERY_SPAN_DAYS = 366
 
+    # Max number of answers read from one reply. An answer for an occurrence
+    # can add an exception VEVENT to the stored event.
+    _MAX_REPLY_ANSWERS = 100
+
     @staticmethod
     def _parse_reply(ics_data, attendee_email):
         """Return ``(reply, None)`` for a usable REPLY, else ``(None, reason)``.
@@ -854,6 +862,8 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                     "end": _date_value(comp.get("DTEND")),
                     "answers": [],
                 }
+            if len(reply["answers"]) == CalDAVService._MAX_REPLY_ANSWERS:
+                break
             reply["answers"].append(
                 {
                     "recurrence_id": _date_value(recurrence_id),
@@ -879,9 +889,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         ``{"applied": bool, "reason": str}``; never raises for expected no-ops.
 
         An answer with RECURRENCE-ID goes to the exception of that occurrence,
-        as in SabreDAV. An answer without RECURRENCE-ID goes to the series.
-        Unlike SabreDAV, it also goes to the exceptions that the reply does not
-        name, see ``_apply_series_answer``.
+        as in SabreDAV. When the occurrence has no exception, a new one holds
+        the answer. An answer without RECURRENCE-ID goes to the series. Unlike
+        SabreDAV, it also goes to the exceptions that the reply does not name,
+        see ``_apply_series_answer``.
 
         ``received_at`` is the time when the mailbox received the reply, in
         seconds. The apply task can retry an old reply after a new one. A reply
@@ -1038,22 +1049,62 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         named = {key for key, _ in answers}
 
         attendee = reply["attendee"]
-        outcomes = []
-        for key, answer in answers:
-            if key not in events:
-                outcome = (
-                    "no-matching-event" if key is None else "recurrence-not-supported"
-                )
-            elif key in newer:
+        outcomes = [None] * len(answers)
+        # The series goes first. A new exception is a copy of the series, so it
+        # must contain the new answer of the series.
+        for index in sorted(
+            range(len(answers)), key=lambda i: answers[i][0] is not None
+        ):
+            key, answer = answers[index]
+            if key in newer:
                 outcome = "superseded"
+            elif key is None and None not in events:
+                outcome = "no-matching-event"
             elif key is None:
                 outcome = self._apply_series_answer(
                     events, named | newer, attendee, answer
                 )
-            else:
+            elif key in events and events[key]["RECURRENCE-ID"].params.get("RANGE"):
+                # This entry also holds the later occurrences.
+                outcome = "recurrence-not-supported"
+            elif key in events:
                 outcome = self._apply_answer(events[key], attendee, answer)
-            outcomes.append(outcome)
+            else:
+                outcome = self._add_exception(stored, events, attendee, answer)
+            outcomes[index] = outcome
         return outcomes
+
+    def _add_exception(self, stored, events, attendee_email, answer):
+        """Add an exception that holds the answer for one occurrence, in-place.
+
+        Returns ``applied``, or the reason why the stored event does not change.
+        """
+        recurrence_id = answer["recurrence_id"]
+        series = events.get(None)
+        # An entry with a RANGE also changes the later occurrences, and an
+        # RDATE period has its own end. A copy of the series does not contain
+        # these changes. The expansion does not read EXRULE, which RFC 5545
+        # deprecates.
+        if any(
+            event.get("RECURRENCE-ID") is not None
+            and event["RECURRENCE-ID"].params.get("RANGE")
+            for event in events.values()
+        ) or (series is not None and (has_rdate_period(series) or "EXRULE" in series)):
+            return "recurrence-not-supported"
+        exception = series and occurrence_override(series, recurrence_id)
+        if exception is None:
+            logger.info(
+                "Ignoring iTIP REPLY answer for %s: not an occurrence of UID %s",
+                recurrence_id.isoformat(),
+                series and series.get("UID"),
+            )
+            return "no-matching-occurrence"
+        outcome = self._apply_answer(exception, attendee_email, answer)
+        # An exception that changes nothing has no use.
+        if outcome == "applied":
+            stored.add_component(exception)
+            events[_occurrence_key(recurrence_id)] = exception
+        return outcome
 
     def _apply_series_answer(self, events, skipped, attendee_email, answer):
         """Set the answer of the attendee on the series, in-place.

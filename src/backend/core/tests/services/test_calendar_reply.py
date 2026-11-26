@@ -175,12 +175,169 @@ def test_answer_to_the_old_time_of_a_moved_occurrence_is_stale():
     assert _partstat(exception) == "NEEDS-ACTION"
 
 
-def test_answer_for_an_occurrence_without_exception_is_not_applied():
-    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 0)))
+def test_answer_for_an_occurrence_without_exception_adds_one():
+    outcomes, (series, moved, added) = _apply(_reply((REGULAR, "DECLINED", 0)))
+
+    assert outcomes == ["applied"]
+    assert _partstat(series) == "NEEDS-ACTION"
+    assert _partstat(moved) == "NEEDS-ACTION"
+    assert _partstat(added) == "DECLINED"
+    assert _partstat(added, OTHER) == "NEEDS-ACTION"
+    assert added["RECURRENCE-ID"].to_ical() == b"20260316T100000"
+    assert added["RECURRENCE-ID"].params["TZID"] == "Europe/Paris"
+    assert added["DTSTART"].to_ical() == b"20260316T100000"
+    assert added["DTEND"].to_ical() == b"20260316T110000"
+    assert added["SEQUENCE"] == 0
+    assert "RRULE" not in added
+    assert "RRULE" in series
+
+
+def test_new_exception_has_no_schedule_status_from_the_series():
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:other@example.com",
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT;CN=Other;"
+            "SCHEDULE-STATUS=1.1:mailto:other@example.com",
+        ).replace(
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:attendee@example.com",
+            "ATTENDEE;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;SCHEDULE-STATUS=1.1:"
+            "mailto:attendee@example.com",
+        )
+    )
+
+    outcomes, (series, moved, added) = _apply(_reply((REGULAR, "DECLINED", 0)), stored)
+
+    assert outcomes == ["applied"]
+    answered, other = added["ATTENDEE"]
+    assert answered.params["SCHEDULE-STATUS"] == "2.0"
+    assert "SCHEDULE-STATUS" not in other.params
+    assert other.params["PARTSTAT"] == "NEEDS-ACTION"
+    assert other.params["RSVP"] == "TRUE"
+    assert other.params["ROLE"] == "REQ-PARTICIPANT"
+    assert other.params["CN"] == "Other"
+    for event in (series, moved):
+        assert [a.params.get("SCHEDULE-STATUS") for a in event["ATTENDEE"]] == [
+            "1.1",
+            "1.1",
+        ]
+
+
+def test_no_exception_for_a_series_with_a_change_for_this_and_future():
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "RECURRENCE-ID;TZID=Europe/Paris:20260309T100000",
+            "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Europe/Paris:20260309T100000",
+        )
+    )
+
+    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 0)), stored)
 
     assert outcomes == ["recurrence-not-supported"]
     assert len(events) == 2
-    assert _partstat(events[0]) == "NEEDS-ACTION"
+
+
+def test_answer_for_one_date_does_not_change_a_change_for_this_and_future():
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "RECURRENCE-ID;TZID=Europe/Paris:20260309T100000",
+            "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Europe/Paris:20260309T100000",
+        )
+    )
+
+    outcomes, events = _apply(_reply((MOVED, "DECLINED", 0)), stored)
+
+    assert outcomes == ["recurrence-not-supported"]
+    assert _partstat(events[1]) == "NEEDS-ACTION"
+
+
+@pytest.mark.parametrize("series_first", [True, False])
+def test_reply_with_an_answer_for_the_series_and_for_an_occurrence_without_exception(
+    series_first,
+):
+    answers = [(None, "ACCEPTED", 0), (REGULAR, "DECLINED", 0)]
+    if not series_first:
+        answers.reverse()
+
+    outcomes, (series, moved, added) = _apply(_reply(*answers))
+
+    assert outcomes == ["applied", "applied"]
+    assert _partstat(series) == "ACCEPTED"
+    assert _partstat(moved) == "ACCEPTED"
+    assert _partstat(added) == "DECLINED"
+    assert _partstat(added, OTHER) == "NEEDS-ACTION"
+
+
+def test_no_exception_for_a_series_with_an_exclusion_rule():
+    # EXRULE removes each date until 23 March, also 16 March.
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "RRULE:FREQ=WEEKLY;COUNT=10",
+            "RRULE:FREQ=WEEKLY;COUNT=10\nEXRULE:FREQ=WEEKLY;UNTIL=20260324T000000Z",
+        )
+    )
+
+    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 0)), stored)
+
+    assert outcomes == ["recurrence-not-supported"]
+    assert len(events) == 2
+
+
+def test_no_exception_for_a_series_with_an_rdate_period():
+    # The occurrence of 17 March lasts three hours, not one.
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "RRULE:FREQ=WEEKLY;COUNT=10",
+            "RRULE:FREQ=WEEKLY;COUNT=10\nRDATE;VALUE=PERIOD:20260317T090000Z/PT3H",
+        )
+    )
+
+    outcomes, events = _apply(
+        _reply(("RECURRENCE-ID:20260317T090000Z", "DECLINED", 0)), stored
+    )
+
+    assert outcomes == ["recurrence-not-supported"]
+    assert len(events) == 2
+
+
+def test_answer_for_an_occurrence_before_a_new_answer_for_the_series():
+    stored = ICalendar.from_ical(SERIES)
+    stored.walk("VEVENT")[0]["ATTENDEE"][0].params["PARTSTAT"] = "ACCEPTED"
+
+    outcomes, (series, _, added) = _apply(
+        _reply((REGULAR, "ACCEPTED", 0), (None, "DECLINED", 0)), stored
+    )
+
+    assert outcomes == ["applied", "applied"]
+    assert _partstat(series) == "DECLINED"
+    assert _partstat(added) == "ACCEPTED"
+
+
+def test_stale_answer_for_an_occurrence_without_exception_adds_nothing():
+    stored = ICalendar.from_ical(SERIES.replace("SEQUENCE:0", "SEQUENCE:2", 1))
+
+    outcomes, events = _apply(_reply((REGULAR, "DECLINED", 1)), stored)
+
+    assert outcomes == ["stale-sequence"]
+    assert len(events) == 2
+
+
+def test_answer_for_an_occurrence_that_repeats_the_series_answer_adds_nothing():
+    stored = ICalendar.from_ical(SERIES)
+    service = CalDAVService(url="http://caldav.example/")
+    for ics in (_reply((None, "ACCEPTED", 0)), _reply((REGULAR, "ACCEPTED", 0))):
+        reply, _ = CalDAVService._parse_reply(ics, ATTENDEE)
+        outcomes = service._apply_answers(stored, reply)
+
+    assert outcomes == ["unchanged"]
+    assert len(stored.walk("VEVENT")) == 2
+
+
+def test_parse_reads_a_limited_number_of_answers():
+    answers = [(None, "ACCEPTED", 0)] * (CalDAVService._MAX_REPLY_ANSWERS + 5)
+
+    reply, _ = CalDAVService._parse_reply(_reply(*answers), ATTENDEE)
+
+    assert len(reply["answers"]) == CalDAVService._MAX_REPLY_ANSWERS
 
 
 def test_same_answer_is_unchanged():
@@ -464,3 +621,93 @@ def test_outlook_answer_for_a_moved_occurrence_changes_its_exception():
     assert outcomes == ["applied"]
     assert _partstat(series) == "NEEDS-ACTION"
     assert _partstat(exception) == "TENTATIVE"
+
+
+def test_open_xchange_answer_for_an_excluded_date_is_ignored(caplog):
+    stored = ICalendar.from_ical(
+        SERIES.replace(
+            "RRULE:FREQ=WEEKLY;COUNT=10",
+            "RRULE:FREQ=WEEKLY;COUNT=10\nEXDATE;TZID=Europe/Paris:20260323T100000",
+        )
+    )
+    ics = "\r\n".join(
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//Open-Xchange//8.0//EN",
+            "METHOD:REPLY",
+            "BEGIN:VEVENT",
+            "UID:series@example.com",
+            "DTSTAMP:20260320T000000Z",
+            "RECURRENCE-ID;TZID=Europe/Paris:20260323T100000",
+            "DTSTART;TZID=Europe/Paris:20260323T100000",
+            "DTEND;TZID=Europe/Paris:20260323T110000",
+            "SEQUENCE:0",
+            "ORGANIZER:mailto:organizer@example.com",
+            f"ATTENDEE;PARTSTAT=DECLINED:mailto:{ATTENDEE}",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+    )
+
+    with caplog.at_level("INFO", logger="core.services.calendar.service"):
+        outcomes, events = _apply(ics, stored)
+
+    assert outcomes == ["no-matching-occurrence"]
+    assert len(events) == 2
+    assert _partstat(events[0]) == "NEEDS-ACTION"
+    assert "not an occurrence of UID series@example.com" in caplog.text
+
+
+def test_sabredav_answer_for_an_occurrence_without_exception_adds_one():
+    # Built as Broker::createReply in sabre/vobject does: the VTIMEZONE of
+    # the event, the SEQUENCE of the series, and the DTSTART of the occurrence.
+    stored = ICalendar.from_ical(SERIES.replace("SEQUENCE:0", "SEQUENCE:2", 1))
+    ics = "\r\n".join(
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//Sabre//Sabre VObject 4.5.6//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:REPLY",
+            "BEGIN:VTIMEZONE",
+            "TZID:Europe/Paris",
+            "BEGIN:DAYLIGHT",
+            "TZOFFSETFROM:+0100",
+            "TZOFFSETTO:+0200",
+            "TZNAME:CEST",
+            "DTSTART:19700329T020000",
+            "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU",
+            "END:DAYLIGHT",
+            "BEGIN:STANDARD",
+            "TZOFFSETFROM:+0200",
+            "TZOFFSETTO:+0100",
+            "TZNAME:CET",
+            "DTSTART:19701025T030000",
+            "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU",
+            "END:STANDARD",
+            "END:VTIMEZONE",
+            "BEGIN:VEVENT",
+            "UID:series@example.com",
+            "SEQUENCE:2",
+            "DTSTAMP:20260320T000000Z",
+            "DTSTART;TZID=Europe/Paris:20260330T100000",
+            "DTEND;TZID=Europe/Paris:20260330T110000",
+            "SUMMARY:Weekly",
+            "RECURRENCE-ID;TZID=Europe/Paris:20260330T100000",
+            "ORGANIZER;CN=Organizer:mailto:organizer@example.com",
+            f"ATTENDEE;PARTSTAT=ACCEPTED;CN=Attendee:mailto:{ATTENDEE}",
+            "END:VEVENT",
+            "END:VCALENDAR",
+            "",
+        ]
+    )
+
+    outcomes, (series, _, added) = _apply(ics, stored)
+
+    assert outcomes == ["applied"]
+    assert _partstat(series) == "NEEDS-ACTION"
+    assert _partstat(added) == "ACCEPTED"
+    assert added["SEQUENCE"] == 2
+    assert added["DTSTART"].to_ical() == b"20260330T100000"

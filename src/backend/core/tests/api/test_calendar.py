@@ -2904,7 +2904,7 @@ class TestApplyReply:
         result = service.apply_reply(reply, attendee_email=self.ATTENDEE)
 
         assert result["applied"] is False
-        assert result["reason"] == "recurrence-not-supported"
+        assert result["reason"] == "no-matching-occurrence"
         assert self._fetch_partstat(calendar_url, uid) == "NEEDS-ACTION"
 
     def test_unparseable_reply_reason(self, caldav_channel):
@@ -3198,6 +3198,55 @@ def test_reply_to_a_moved_occurrence_updates_its_exception(
         for event in ICalendar.from_ical(resp.text).walk("VEVENT")
     }
     assert partstats == {False: "NEEDS-ACTION", True: "DECLINED"}
+
+
+@pytest.mark.django_db()
+def test_reply_to_a_regular_occurrence_adds_an_exception(
+    caldav_channel, radicale_with_calendar
+):
+    calendar_url, put_event = radicale_with_calendar
+    uid = "apply-new-exception@example.com"
+    attendee = TestApplyReply.ATTENDEE
+    put_event(
+        uid,
+        _ORGANIZER_EVENT.format(uid=uid, seq=0, attendee=attendee).replace(
+            "SEQUENCE:0", "SEQUENCE:0\nRRULE:FREQ=WEEKLY;COUNT=8"
+        ),
+    )
+    service = CalDAVService.from_channel(caldav_channel)
+
+    reply = (
+        _REPLY_EVENT.format(
+            uid=uid,
+            seq=0,
+            dtstamp="20260102T000000Z",
+            partstat="DECLINED",
+            attendee=attendee,
+        )
+        .replace("DTSTART:20260601T100000Z", "DTSTART:20260615T100000Z")
+        .replace("DTEND:20260601T110000Z", "DTEND:20260615T110000Z")
+        .replace("SEQUENCE:0", "SEQUENCE:0\nRECURRENCE-ID:20260615T100000Z")
+    )
+    result = service.apply_reply(reply, attendee_email=attendee)
+
+    assert result == {"applied": True, "reason": "applied"}
+    resp = requests.get(
+        calendar_url.rstrip("/") + f"/{uid}.ics",
+        auth=(RADICALE_USER, RADICALE_PASSWORD),
+        timeout=5,
+    )
+    series, exception = sorted(
+        ICalendar.from_ical(resp.text).walk("VEVENT"),
+        key=lambda event: "RECURRENCE-ID" in event,
+    )
+    assert _attendee_partstat(series, attendee) == "NEEDS-ACTION"
+    assert "RRULE" in series
+    assert _attendee_partstat(exception, attendee) == "DECLINED"
+    assert exception["RECURRENCE-ID"].dt == datetime(
+        2026, 6, 15, 10, 0, tzinfo=timezone.utc
+    )
+    assert exception["DTSTART"].dt == exception["RECURRENCE-ID"].dt
+    assert "RRULE" not in exception
 
 
 @pytest.mark.django_db()
