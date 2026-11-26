@@ -3,10 +3,10 @@
 import logging
 from enum import StrEnum
 
-from icalendar import Calendar as ICalendar
 from jmap_email import body_part_text
 
 from core.services.calendar.service import attendee_key
+from core.services.calendar.untrusted_ics import parse_untrusted_ics
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def find_reply_ics(parsed_email):
             logger.info("Skipping oversized text/calendar part (%d chars)", len(ics))
             continue
         try:
-            cal = ICalendar.from_ical(ics)
+            cal = parse_untrusted_ics(ics)
         except Exception:  # pylint: disable=broad-exception-caught
             logger.debug("Skipping unparseable text/calendar part", exc_info=True)
             continue
@@ -99,7 +99,7 @@ def reply_partstat(ics_text, addr):
     if not target:
         return None
     try:
-        cal = ICalendar.from_ical(ics_text)
+        cal = parse_untrusted_ics(ics_text)
     except Exception:  # pylint: disable=broad-exception-caught
         return None
     for comp in cal.walk("VEVENT"):

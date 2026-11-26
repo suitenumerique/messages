@@ -32,6 +32,7 @@ from core.services.calendar.recurrence import (
     occurrence_override,
     recurrence_key,
 )
+from core.services.calendar.untrusted_ics import parse_untrusted_ics
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -822,7 +823,7 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         if not target:
             return None, "attendee-mismatch"
         try:
-            cal = ICalendar.from_ical(ics_data)
+            cal = parse_untrusted_ics(ics_data)
         except Exception:  # pylint: disable=broad-exception-caught
             logger.warning("Could not parse inbound iTIP REPLY", exc_info=True)
             return None, "unparseable-reply"
