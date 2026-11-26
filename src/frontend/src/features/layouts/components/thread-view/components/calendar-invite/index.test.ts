@@ -207,6 +207,15 @@ describe("formatEventDateRange", () => {
         }
     });
 
+    it("should show the hours of a timed event from midnight to midnight", () => {
+        const start = new Date(2025, 5, 15);
+        const end = new Date(2025, 5, 16);
+        const result = formatEventDateRange(start, end, "en-US", false);
+        expect(result).toContain("15");
+        expect(result).toContain("16");
+        expect(result).toMatch(/12:00\sAM/);
+    });
+
     it("should format same-day timed event with time range", () => {
         const start = new Date("2025-06-15T10:00:00");
         const end = new Date("2025-06-15T11:30:00");

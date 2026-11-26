@@ -101,6 +101,7 @@ export const CounterSchedule = ({
             toDate(stored.start),
             toDate(stored.end),
             language,
+            stored.all_day,
         );
     }
 
@@ -150,6 +151,7 @@ export const CounterSchedule = ({
                         isAllDay ? dateValueToLocal(proposedStart) : proposedStart,
                         isAllDay && proposedEnd ? dateValueToLocal(proposedEnd) : proposedEnd,
                         language,
+                        isAllDay,
                     )}
                 </ScheduleRow>
             )}

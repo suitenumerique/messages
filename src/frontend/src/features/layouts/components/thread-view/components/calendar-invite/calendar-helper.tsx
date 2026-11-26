@@ -111,15 +111,18 @@ export function dateValueToLocal(value: Date): Date {
 }
 
 /**
- * Format a date range for display, handling all-day events and same-day events
+ * Format a date range for display, handling all-day events and same-day events.
+ *
+ * Without ``allDay``, the range is all-day when it starts and ends at midnight.
+ * A timed event from midnight to midnight then shows as all-day, so give the
+ * flag when the source knows it.
  */
 export function formatEventDateRange(
     start: Date,
     end: Date | undefined,
     language: string,
+    allDay: boolean = isAllDayEvent(start, end),
 ): string {
-    const allDay = isAllDayEvent(start, end);
-
     const dateFormatter = new Intl.DateTimeFormat(language, {
         weekday: "long",
         year: "numeric",
