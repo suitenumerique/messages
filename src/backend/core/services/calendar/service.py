@@ -88,8 +88,21 @@ def attendee_key(value) -> str:
 # Answers that a REPLY can give. A delegation (DELEGATED) is not supported.
 _REPLY_PARTSTATS = frozenset({"ACCEPTED", "DECLINED", "TENTATIVE"})
 
-# Seconds. Longer than the time in which the apply task retries a reply.
-_REPLY_ORDER_TTL = 24 * 3600
+# Seconds. More than the time in which the apply task retries a reply,
+# about 40 minutes.
+_REPLY_RETRY_TIME = 3600
+# The parameters of an attendee that a reply sets.
+_ANSWER_PARAMS = ("PARTSTAT", "RSVP", "SCHEDULE-STATUS")
+
+
+def _reply_order_ttl():
+    """Return the seconds that the state of the reply order stays.
+
+    The inbound pipeline can defer a message, and the reply keeps the time
+    when the mailbox received it. The state must cover the deferral and the
+    retries of the task.
+    """
+    return django_settings.MESSAGES_INBOUND_DEFERRAL_MAX_AGE + _REPLY_RETRY_TIME
 
 
 def _date_value(prop):
@@ -104,7 +117,7 @@ def _occurrence_key(recurrence_id):
 
 
 def _reply_order_key(resource_url, attendee):
-    """Return the cache key of the arrival times of replies.
+    """Return the cache key of the state of the reply order.
 
     There is one key for each attendee of each stored event.
     """
@@ -892,9 +905,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         an older time, is applied too. RFC 5546 lets the organizer accept it.
 
         ``received_at`` is the time when the mailbox received the reply, in
-        seconds. The apply task can retry an old reply after a new one. A reply
-        does not change an occurrence that has an answer from a reply that
-        arrived later: the reason is ``superseded``.
+        seconds. The apply task can retry an old reply after a new one. The
+        result is the same as in the order of arrival, see
+        ``_apply_in_order``. When the newer replies hide the old reply, the
+        reason is ``superseded``.
 
         Does not set ``SCHEDULE-AGENT=CLIENT`` on ORGANIZER. That parameter
         controls the messages that an attendee's server sends to the organizer
@@ -961,30 +975,29 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 stored = ICalendar.from_ical(fresh_ics)
             except Exception:  # pylint: disable=broad-exception-caught
                 return {"applied": False, "reason": "no-etag"}
-        order_key = _reply_order_key(resource_url, reply["attendee"])
-        order = cache.get(order_key) or {}
-        received_at = reply.get("received_at")
-        # The occurrences that have an answer from a reply that arrived later.
-        newer = {
-            key
-            for key, at in order.items()
-            if received_at is not None and at > received_at
-        }
+        state_key = _reply_order_key(resource_url, reply["attendee"])
+        saved = cache.get(state_key)
         for attempt in (1, 2):
-            outcomes = self._apply_answers(stored, reply, newer)
+            original = self._answers(stored, reply)
+            state, outcomes = self._apply_in_order(stored, reply, saved)
             # A shared mailbox gets one apply task per user, and a relay can
-            # deliver the same reply twice. Do not write an event that did not
-            # change: each write makes the server process it for scheduling.
-            if "applied" not in outcomes:
-                self._record_arrival(order_key, order, reply, outcomes)
-                return {"applied": False, "reason": outcomes[0]}
+            # deliver the same reply twice. Do not write an event when the
+            # answers did not change: each write makes the server process it
+            # for scheduling.
+            if self._answers(stored, reply) == original:
+                self._save_state(state_key, self._written(state))
+                reason = "superseded" if "applied" in outcomes else outcomes[0]
+                return {"applied": False, "reason": reason}
             # The stored event comes from the organizer's calendar, not from the
             # email. Write it back whole. ``rebuild_for_storage`` is for untrusted
             # input: it removes alarms, attachments and X- properties.
             body = stored.to_ical().decode("utf-8")
             try:
+                # The reply arrived, so it goes in the state also when the
+                # write fails. The next reply then applies it.
+                self._save_state(state_key, state)
                 self._put_resource(resource_url, body, etag)
-                self._record_arrival(order_key, order, reply, outcomes)
+                self._save_state(state_key, self._written(state))
                 return {"applied": True, "reason": "applied"}
             except CalDAVError as exc:
                 if exc.status_code != 412:
@@ -1012,36 +1025,228 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         return {"applied": False, "reason": "concurrent-modification"}
 
     @staticmethod
-    def _record_arrival(order_key, order, reply, outcomes):
-        """Record when the reply arrived, for each occurrence that it answers.
+    def _save_state(state_key, state):
+        """Keep the state of the reply order for the deferral and the retries."""
+        if state is not None:
+            cache.set(state_key, state, _reply_order_ttl())
 
-        ``order`` gives the arrival time of the last reply for each occurrence.
-        An answer that changes nothing is recorded too: it is in effect.
+    @staticmethod
+    def _written(state):
+        """Return ``state`` with each of its replies in the event."""
+        if state is None:
+            return None
+        return {
+            **state,
+            "replies": [{**old, "written": True} for old in state["replies"]],
+        }
+
+    def _apply_in_order(self, stored, reply, state):
+        """Apply the reply to ``stored`` in the order of arrival, in-place.
+
+        ``state`` holds the answers of the attendee before the replies, and
+        the replies that arrived, in the order of arrival. The attendee gets
+        the answers of all these replies, applied in that order. So the
+        order of processing does not change the answers.
+
+        Returns the new state and the outcome of each answer of this reply.
         """
         received_at = reply.get("received_at")
         if received_at is None:
-            return
-        for answer, outcome in zip(reply["answers"], outcomes, strict=True):
-            if outcome in ("applied", "unchanged"):
-                order[_occurrence_key(answer["recurrence_id"])] = received_at
-        cache.set(order_key, order, _REPLY_ORDER_TTL)
+            return None, self._apply_answers(stored, reply)
+        state = self._check_state(stored, reply, state)
+        superseded = ["superseded"] * len(reply["answers"])
+        entry = {"at": received_at, "answers": reply["answers"], "written": False}
+        replies = state["replies"]
+        # A relay or a shared mailbox can give the same reply twice, and a
+        # retry gives it again.
+        if any(self._same_reply(old, entry) for old in replies):
+            self._fold_stored(stored, reply, state, replies)
+            return state, ["unchanged"] * len(reply["answers"])
+        if state["floor"] is not None and received_at <= state["floor"]:
+            return state, superseded
+        replies = sorted([*replies, entry], key=lambda old: old["at"])
+        state = self._prune(stored, reply, {**state, "replies": replies})
+        outcomes = self._fold_stored(stored, reply, state, state["replies"])
+        for old, result in zip(state["replies"], outcomes, strict=True):
+            if self._same_reply(old, entry):
+                return state, result
+        return state, superseded
 
-    def _apply_answers(self, stored, reply, newer=frozenset()):
-        """Apply each answer of the reply to its VEVENT in ``stored``, in-place.
+    def _check_state(self, stored, reply, state):
+        """Return the state of the reply order, checked against ``stored``.
 
-        ``newer`` holds the occurrences that have an answer from a reply that
-        arrived later. An answer for one of them is ``superseded``.
-
-        Returns the outcome of each answer: ``applied``, or the reason why the
-        answer changes nothing.
+        The event must have the answers of the replies that are written, or
+        of all of them: a failed write can still reach the server. Else,
+        someone else changed the answers. The state then starts again from
+        the event. The written replies lose against that change, and so do
+        the later replies that are older than them. The replies that are not
+        written stay: nobody saw their answers yet.
         """
-        events = {}
+        # No state, or a state in an older format.
+        if not isinstance(state, dict) or "baseline" not in state:
+            return self._new_state(stored, reply, floor=None)
+        replies = state["replies"]
+        if self._has_answers_of(stored, reply, state, replies):
+            return self._written(state)
+        written = [old for old in replies if old["written"]]
+        if self._has_answers_of(stored, reply, state, written):
+            return state
+        times = [old["at"] for old in written]
+        if state["floor"] is not None:
+            times.append(state["floor"])
+        return self._new_state(
+            stored,
+            reply,
+            floor=max(times, default=None),
+            replies=[old for old in replies if not old["written"]],
+        )
+
+    def _new_state(self, stored, reply, floor, replies=()):
+        """Return a state from the answers in ``stored``."""
+        return {
+            "baseline": self._answer_params(stored, reply),
+            "floor": floor,
+            "replies": list(replies),
+        }
+
+    def _prune(self, stored, reply, state):
+        """Return ``state`` with its replies of the TTL.
+
+        The older replies go into the answers from before the replies. A
+        later reply that is older than them is then superseded.
+        """
+        replies = state["replies"]
+        oldest = replies[-1]["at"] - _reply_order_ttl()
+        kept = [old for old in replies if old["at"] > oldest]
+        if len(kept) == len(replies):
+            return state
+        dropped = replies[: len(replies) - len(kept)]
+        copy = ICalendar.from_ical(stored.to_ical())
+        self._fold(copy, reply, state, dropped)
+        return {
+            "baseline": self._answer_params(copy, reply),
+            "floor": dropped[-1]["at"],
+            "replies": kept,
+        }
+
+    def _has_answers_of(self, stored, reply, state, replies):
+        """Tell if the attendee has the answers of ``replies`` in ``stored``."""
+        copy = ICalendar.from_ical(stored.to_ical())
+        self._fold(copy, reply, state, replies)
+        expected = self._answers(copy, reply)
+        current = self._answers(stored, reply)
+        # A VEVENT that only one of them has follows the series.
+        return all(
+            expected.get(key, expected.get(None)) == current.get(key, current.get(None))
+            for key in expected.keys() | current.keys()
+        )
+
+    def _fold_stored(self, stored, reply, state, replies):
+        """Give the attendee the answers of ``replies`` in ``stored``, in-place.
+
+        A VEVENT where the answer does not change keeps its answer parameters.
+        So a reconfirmation request from the organizer, an RSVP=TRUE with the
+        same PARTSTAT, stays. The check of the state compares only PARTSTAT.
+
+        Returns the outcomes of each reply.
+        """
+        before = self._answer_params(stored, reply)
+        answers = self._answers(stored, reply)
+        outcomes = self._fold(stored, reply, state, replies)
+        after = self._answers(stored, reply)
+        for key, event in self._reply_events(stored, reply):
+            if key in before and after.get(key) == answers.get(key):
+                self._set_answer_params(event, reply, before[key])
+        return outcomes
+
+    def _fold(self, stored, reply, state, replies):
+        """Give the attendee the answers of ``replies`` in ``stored``, in-place.
+
+        The attendee first gets back the answers from before the replies. A
+        VEVENT that has no such answers, for example an exception that a
+        reply adds, gets the answers of the series. Then each reply applies,
+        in the order of arrival.
+
+        Returns the outcomes of each reply.
+        """
+        baseline = state["baseline"]
+        # No message went to the attendee for a new exception.
+        series = [
+            {name: value for name, value in params.items() if name != "SCHEDULE-STATUS"}
+            for params in baseline.get(None, [])
+        ]
+        for key, event in self._reply_events(stored, reply):
+            self._set_answer_params(event, reply, baseline.get(key, series))
+        return [
+            self._apply_answers(
+                stored, {**reply, "received_at": old["at"], "answers": old["answers"]}
+            )
+            for old in replies
+        ]
+
+    @staticmethod
+    def _same_reply(one, other):
+        return one["at"] == other["at"] and one["answers"] == other["answers"]
+
+    @staticmethod
+    def _reply_events(stored, reply):
+        """Yield ``(key, VEVENT)`` for each VEVENT of the event of the reply."""
         for comp in stored.walk("VEVENT"):
             if str(comp.get("UID") or "") != reply["uid"]:
                 continue
             recurrence_id = comp.get("RECURRENCE-ID")
             key = None if recurrence_id is None else recurrence_key(recurrence_id.dt)
-            events[key] = comp
+            yield key, comp
+
+    @staticmethod
+    def _answers(stored, reply):
+        """Return the answer of the attendee on each VEVENT, by key."""
+        return {
+            key: CalDAVService._partstat(event, reply["attendee"])
+            for key, event in CalDAVService._reply_events(stored, reply)
+        }
+
+    @staticmethod
+    def _answer_params(stored, reply):
+        """Return the answer parameters of the attendee on each VEVENT, by key."""
+        return {
+            key: [
+                {
+                    name: str(value)
+                    for name, value in att.params.items()
+                    if name in _ANSWER_PARAMS
+                }
+                for att in CalDAVService._attendees(event, reply["attendee"])
+            ]
+            for key, event in CalDAVService._reply_events(stored, reply)
+        }
+
+    @staticmethod
+    def _set_answer_params(event, reply, saved):
+        """Give the attendee the answer parameters ``saved``, in-place.
+
+        The other parameters, for example a ROLE from the organizer, stay.
+        """
+        attendees = CalDAVService._attendees(event, reply["attendee"])
+        for att, params in zip(attendees, saved, strict=False):
+            current = {
+                name: str(value)
+                for name, value in att.params.items()
+                if name in _ANSWER_PARAMS
+            }
+            if current == params:
+                continue
+            for name in _ANSWER_PARAMS:
+                att.params.pop(name, None)
+            att.params.update(params)
+
+    def _apply_answers(self, stored, reply):
+        """Apply each answer of the reply to its VEVENT in ``stored``, in-place.
+
+        Returns the outcome of each answer: ``applied``, or the reason why the
+        answer changes nothing.
+        """
+        events = dict(self._reply_events(stored, reply))
 
         answers = [
             (_occurrence_key(answer["recurrence_id"]), answer)
@@ -1057,14 +1262,10 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
             range(len(answers)), key=lambda i: answers[i][0] is not None
         ):
             key, answer = answers[index]
-            if key in newer:
-                outcome = "superseded"
-            elif key is None and None not in events:
+            if key is None and None not in events:
                 outcome = "no-matching-event"
             elif key is None:
-                outcome = self._apply_series_answer(
-                    events, named | newer, attendee, answer
-                )
+                outcome = self._apply_series_answer(events, named, attendee, answer)
             elif key in events and events[key]["RECURRENCE-ID"].params.get("RANGE"):
                 # This entry also holds the later occurrences.
                 outcome = "recurrence-not-supported"
@@ -1110,12 +1311,12 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
     def _apply_series_answer(self, events, skipped, attendee_email, answer):
         """Set the answer of the attendee on the series, in-place.
 
-        The answer also goes to each exception that is not in ``skipped``: the
-        occurrences that the reply names, and those that have a newer answer.
-        Some clients, such as Outlook, send only the series VEVENT to answer
-        for all the occurrences. An exception takes the answer when the
-        attendee has no answer there, or has the answer that the series had. A
-        different answer for one occurrence stays.
+        The answer also goes to each exception that is not in ``skipped``, the
+        occurrences that the reply names. Some clients, such as Outlook, send
+        only the series VEVENT to answer for all the occurrences. An exception
+        takes the answer when the attendee has no answer there, or has the
+        answer that the series had. A different answer for one occurrence
+        stays.
 
         Returns ``applied`` when a VEVENT changes, else the reason why the
         series does not change.
