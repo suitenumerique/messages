@@ -17,6 +17,7 @@ import {
     createContactFromAttendee,
     collapseRecurringEvents,
     findCounterProposer,
+    dateValueToLocal,
 } from "./calendar-helper";
 import { buildAttendeeList } from "./index";
 
@@ -176,6 +177,20 @@ describe("formatEventDateRange", () => {
         expect(result).toContain("15");
         expect(result).toContain("17"); // adjusted end: 18 - 1 day = 17
         expect(result).toContain("–");
+    });
+
+    it("should show a DATE value on its day west of UTC", () => {
+        const previousTz = process.env.TZ;
+        process.env.TZ = "America/Los_Angeles";
+        try {
+            const start = dateValueToLocal(new Date("2026-12-02T00:00:00Z"));
+            const end = dateValueToLocal(new Date("2026-12-03T00:00:00Z"));
+            const result = formatEventDateRange(start, end, "en-US");
+            expect(result).toContain("December 2");
+            expect(result).not.toContain("–");
+        } finally {
+            process.env.TZ = previousTz;
+        }
     });
 
     it("should keep a one-day all-day event on its day across a DST change", () => {

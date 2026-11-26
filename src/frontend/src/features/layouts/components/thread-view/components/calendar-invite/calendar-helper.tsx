@@ -101,6 +101,16 @@ export function isAllDayEvent(start: Date, end?: Date): boolean {
 }
 
 /**
+ * Return the day of a DATE value at local midnight.
+ *
+ * ts-ics gives a DATE value as UTC midnight. West of UTC, a local format of
+ * that instant shows the day before.
+ */
+export function dateValueToLocal(value: Date): Date {
+    return new Date(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+}
+
+/**
  * Format a date range for display, handling all-day events and same-day events
  */
 export function formatEventDateRange(

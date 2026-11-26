@@ -9,6 +9,7 @@ import { fetchAPI } from "@/features/api/fetch-api";
 import { CalendarStoredEventResponse } from "@/features/api/gen/models";
 import {
     createContactFromAttendee,
+    dateValueToLocal,
     findCounterProposer,
     formatEventDateRange,
     getEventEnd,
@@ -105,6 +106,8 @@ export const CounterSchedule = ({
 
     const occurrence = event.recurrenceId?.value;
     const proposedStart = event.start?.date;
+    const proposedEnd = getEventEnd(event);
+    const isAllDay = event.start?.type === "DATE";
 
     return (
         <>
@@ -144,8 +147,8 @@ export const CounterSchedule = ({
             {proposedStart && (
                 <ScheduleRow icon="update" label={t("Proposed time")}>
                     {formatEventDateRange(
-                        proposedStart,
-                        getEventEnd(event),
+                        isAllDay ? dateValueToLocal(proposedStart) : proposedStart,
+                        isAllDay && proposedEnd ? dateValueToLocal(proposedEnd) : proposedEnd,
                         language,
                     )}
                 </ScheduleRow>
