@@ -127,6 +127,12 @@
     margin-top: 2px;
 }
 
+.calendar-invite__schedule-label {
+    flex-shrink: 0;
+    min-width: 8em;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
 .calendar-invite__description {
     display: flex;
     align-items: flex-start;

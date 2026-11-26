@@ -2911,6 +2911,88 @@
                 }
             }
         },
+        "/api/v1.0/mailboxes/{mailbox_id}/calendar/stored-event/": {
+            "post": {
+                "operationId": "mailboxes_calendar_stored_event_create",
+                "description": "Return the stored times of the event, or null.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "mailbox_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "calendar"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarStoredEventRequestRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CalendarStoredEventRequestRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CalendarStoredEventResponse"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "Missing or invalid ics_data."
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "description": "CalDAV server error while searching the event."
+                    }
+                }
+            }
+        },
         "/api/v1.0/mailboxes/{mailbox_id}/channels/": {
             "get": {
                 "operationId": "mailboxes_channels_list",
@@ -8077,6 +8159,55 @@
                 },
                 "required": [
                     "task_id"
+                ]
+            },
+            "CalendarStoredEventRequestRequest": {
+                "type": "object",
+                "properties": {
+                    "ics_data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Raw ICS content of the iTIP message"
+                    }
+                },
+                "required": [
+                    "ics_data"
+                ]
+            },
+            "CalendarStoredEventResponse": {
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/CalendarStoredEventTimes"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "Stored times of the event, or of the occurrence that the RECURRENCE-ID names. Null when no calendar holds the event."
+                    }
+                },
+                "required": [
+                    "event"
+                ]
+            },
+            "CalendarStoredEventTimes": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "string"
+                    },
+                    "end": {
+                        "type": "string"
+                    },
+                    "all_day": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "all_day",
+                    "end",
+                    "start"
                 ]
             },
             "ChangeFlagRequestRequest": {

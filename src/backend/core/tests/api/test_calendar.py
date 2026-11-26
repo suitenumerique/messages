@@ -19,6 +19,7 @@ from core import factories
 from core.enums import ChannelTypes, MailboxRoleChoices
 from core.services.calendar.ics_rebuild import rebuild_for_storage
 from core.services.calendar.service import CalDAVError, CalDAVService
+from core.services.calendar.stored_times import stored_times
 
 
 class _SilentHandler(WSGIRequestHandler):
@@ -689,6 +690,422 @@ END:VCALENDAR""",
             },
         )
         assert resp.status_code == 404
+
+
+STORED_SERIES_ICS = """\
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:weekly@example.com
+DTSTART;TZID=Europe/Paris:20261201T100000
+DTEND;TZID=Europe/Paris:20261201T110000
+RRULE:FREQ=WEEKLY;COUNT=5
+SUMMARY:Weekly sync
+ORGANIZER:mailto:{organizer}
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:guest@example.com
+END:VEVENT
+BEGIN:VEVENT
+UID:weekly@example.com
+RECURRENCE-ID;TZID=Europe/Paris:20261215T100000
+DTSTART;TZID=Europe/Paris:20261215T140000
+DTEND;TZID=Europe/Paris:20261215T153000
+SUMMARY:Weekly sync
+ORGANIZER:mailto:{organizer}
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:guest@example.com
+END:VEVENT
+END:VCALENDAR"""
+
+COUNTER_ICS = """\
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Google Inc//Google Calendar 70.9054//EN
+METHOD:COUNTER
+BEGIN:VEVENT
+UID:{uid}
+{recurrence_id}DTSTART:20261230T090000Z
+DTEND:20261230T100000Z
+SUMMARY:Proposed new time
+ORGANIZER:mailto:{organizer}
+ATTENDEE;PARTSTAT=ACCEPTED:mailto:guest@example.com
+END:VEVENT
+END:VCALENDAR"""
+
+
+def _make_counter(organizer, uid, recurrence_id=""):
+    return COUNTER_ICS.format(
+        uid=uid,
+        organizer=organizer,
+        recurrence_id=f"{recurrence_id}\n" if recurrence_id else "",
+    )
+
+
+def _recurrence_id(line):
+    vevent = ICalendar.from_ical(f"BEGIN:VEVENT\r\n{line}\r\nEND:VEVENT\r\n")
+    return vevent["RECURRENCE-ID"]
+
+
+def _series(*lines):
+    body = "\r\n".join(("UID:dst@example.com", *lines, "RRULE:FREQ=WEEKLY;COUNT=3"))
+    return (
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n"
+        f"{body}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "recurrence_line",
+    [
+        "RECURRENCE-ID:20270328T000000Z",
+        "RECURRENCE-ID;TZID=Europe/Paris:20270328T010000",
+    ],
+)
+def test_stored_times_keep_the_exact_dtend_duration_across_dst(recurrence_line):
+    """RFC 5545 gives each occurrence the exact DTSTART to DTEND duration."""
+    stored = _series(
+        "DTSTART;TZID=Europe/Paris:20270321T010000",
+        "DTEND;TZID=Europe/Paris:20270321T040000",
+    )
+
+    result = stored_times(stored, "dst@example.com", _recurrence_id(recurrence_line))
+
+    assert result is not None
+    assert datetime.fromisoformat(str(result["end"])) == datetime(
+        2027, 3, 28, 3, 0, tzinfo=timezone.utc
+    )
+
+
+@pytest.mark.parametrize(
+    ("duration", "end_hour_utc"),
+    [
+        # The days of a DURATION are nominal: the end keeps its local time.
+        ("P1D", 10),
+        # Hours are exact: 24 hours later is one hour later in local time.
+        ("PT24H", 11),
+    ],
+)
+def test_stored_times_follow_the_duration_units_across_dst(duration, end_hour_utc):
+    """Nominal and exact DURATION units give different ends across DST."""
+    stored = _series(
+        "DTSTART;TZID=Europe/Paris:20270327T120000", f"DURATION:{duration}"
+    )
+
+    result = stored_times(
+        stored, "dst@example.com", _recurrence_id("RECURRENCE-ID:20270327T110000Z")
+    )
+
+    assert result is not None
+    assert datetime.fromisoformat(str(result["end"])) == datetime(
+        2027, 3, 28, end_hour_utc, 0, tzinfo=timezone.utc
+    )
+
+
+def test_stored_times_ignore_the_duration_of_an_alarm():
+    """A VALARM DURATION does not replace the DURATION of its event."""
+    stored = _series(
+        "DTSTART;TZID=Europe/Paris:20270327T120000",
+        "DURATION:P1D",
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        "DESCRIPTION:Reminder",
+        "TRIGGER:-PT15M",
+        "REPEAT:1",
+        "DURATION:PT5M",
+        "END:VALARM",
+    )
+
+    result = stored_times(
+        stored, "dst@example.com", _recurrence_id("RECURRENCE-ID:20270327T110000Z")
+    )
+
+    assert result is not None
+    assert datetime.fromisoformat(str(result["end"])) == datetime(
+        2027, 3, 28, 10, 0, tzinfo=timezone.utc
+    )
+
+
+def test_stored_times_keep_the_exact_duration_of_the_event_itself():
+    """Without RECURRENCE-ID, PT24H across DST still gives 24 exact hours."""
+    stored = _series("DTSTART;TZID=Europe/Paris:20270327T120000", "DURATION:PT24H")
+
+    result = stored_times(stored, "dst@example.com", None)
+
+    assert result is not None
+    assert datetime.fromisoformat(str(result["end"])) == datetime(
+        2027, 3, 28, 11, 0, tzinfo=timezone.utc
+    )
+
+
+def test_stored_times_keep_the_exact_duration_of_a_changed_occurrence():
+    """A changed occurrence uses the units of its own DURATION."""
+    stored = _series(
+        "DTSTART;TZID=Europe/Paris:20270320T120000", "DURATION:P1D"
+    ).replace(
+        "END:VCALENDAR",
+        "BEGIN:VEVENT\r\nUID:dst@example.com\r\n"
+        "RECURRENCE-ID;TZID=Europe/Paris:20270327T120000\r\n"
+        "DTSTART;TZID=Europe/Paris:20270327T120000\r\nDURATION:PT24H\r\n"
+        "END:VEVENT\r\nEND:VCALENDAR",
+    )
+
+    result = stored_times(
+        stored, "dst@example.com", _recurrence_id("RECURRENCE-ID:20270327T110000Z")
+    )
+
+    assert result is not None
+    assert datetime.fromisoformat(str(result["end"])) == datetime(
+        2027, 3, 28, 11, 0, tzinfo=timezone.utc
+    )
+
+
+@pytest.mark.django_db()
+class TestCalendarStoredEventView:
+    """Tests for the stored event endpoint."""
+
+    @pytest.fixture()
+    def post(self, api_client, mailbox, caldav_channel, user_with_mailbox):
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        def _post(ics_data):
+            return api_client.post(
+                f"/api/v1.0/mailboxes/{mailbox.id}/calendar/stored-event/",
+                {"ics_data": ics_data},
+            )
+
+        return _post
+
+    def test_returns_the_stored_times_of_the_event(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        _, put_event = radicale_with_calendar
+        put_event(
+            "test-event-001",
+            _make_ics(
+                mailbox,
+                dtstart=datetime(2026, 12, 1, 10, tzinfo=timezone.utc),
+            ),
+        )
+
+        resp = post(_make_counter(mailbox, "test-event-001@example.com"))
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "event": {
+                "start": "2026-12-01T10:00:00+00:00",
+                "end": "2026-12-01T11:00:00+00:00",
+                "all_day": False,
+            }
+        }
+
+    def test_returns_null_when_no_calendar_holds_the_event(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        resp = post(_make_counter(mailbox, "unknown@example.com"))
+
+        assert resp.status_code == 200
+        assert resp.json() == {"event": None}
+
+    def test_returns_a_regular_occurrence_of_a_series(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        _, put_event = radicale_with_calendar
+        put_event("weekly", STORED_SERIES_ICS.format(organizer=mailbox))
+
+        resp = post(
+            _make_counter(
+                mailbox,
+                "weekly@example.com",
+                "RECURRENCE-ID;TZID=Europe/Paris:20261208T100000",
+            )
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["event"] == {
+            "start": "2026-12-08T10:00:00+01:00",
+            "end": "2026-12-08T11:00:00+01:00",
+            "all_day": False,
+        }
+
+    @pytest.mark.parametrize(
+        ("recurrence", "recurrence_id"),
+        [
+            pytest.param(
+                "RRULE:FREQ=WEEKLY;COUNT=5\nEXDATE;TZID=Europe/Paris:20261208T100000",
+                "20261208T090000Z",
+                id="exdate",
+            ),
+            pytest.param(
+                "RRULE:FREQ=WEEKLY;UNTIL=20261209T000000Z",
+                "20261222T090000Z",
+                id="until",
+            ),
+            pytest.param(
+                "RRULE:FREQ=WEEKLY;COUNT=5",
+                "20270105T090000Z",
+                id="count",
+            ),
+            pytest.param(
+                "RRULE:FREQ=WEEKLY;COUNT=5",
+                "20261209T090000Z",
+                id="not-on-the-rule",
+            ),
+        ],
+    )
+    def test_returns_null_for_an_occurrence_that_does_not_exist(
+        self, post, mailbox, radicale_with_calendar, recurrence, recurrence_id
+    ):
+        _, put_event = radicale_with_calendar
+        put_event(
+            "weekly",
+            STORED_SERIES_ICS.format(organizer=mailbox).replace(
+                "RRULE:FREQ=WEEKLY;COUNT=5", recurrence
+            ),
+        )
+
+        resp = post(
+            _make_counter(
+                mailbox, "weekly@example.com", f"RECURRENCE-ID:{recurrence_id}"
+            )
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"event": None}
+
+    def test_returns_the_end_of_an_rdate_period(self, mailbox):
+        """Radicale refuses an RDATE period, so the test reads the ICS directly."""
+        stored = STORED_SERIES_ICS.format(organizer=mailbox).replace(
+            "RRULE:FREQ=WEEKLY;COUNT=5",
+            "RRULE:FREQ=WEEKLY;COUNT=5\n"
+            "RDATE;VALUE=PERIOD:20261203T130000Z/20261203T150000Z",
+        )
+        counter = ICalendar.from_ical(
+            _make_counter(
+                mailbox, "weekly@example.com", "RECURRENCE-ID:20261203T130000Z"
+            )
+        )
+        recurrence_id = next(iter(counter.walk("VEVENT")))["RECURRENCE-ID"]
+
+        assert stored_times(stored, "weekly@example.com", recurrence_id) == {
+            "start": "2026-12-03T13:00:00+00:00",
+            "end": "2026-12-03T15:00:00+00:00",
+            "all_day": False,
+        }
+
+    def test_returns_null_after_a_this_and_future_override(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        _, put_event = radicale_with_calendar
+        put_event(
+            "weekly",
+            STORED_SERIES_ICS.format(organizer=mailbox).replace(
+                "RECURRENCE-ID;TZID=Europe/Paris:20261215T100000",
+                "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Europe/Paris:20261208T100000",
+            ),
+        )
+
+        resp = post(
+            _make_counter(
+                mailbox, "weekly@example.com", "RECURRENCE-ID:20261222T090000Z"
+            )
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"event": None}
+
+    def test_returns_a_changed_occurrence_of_a_series(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        """The RECURRENCE-ID of the message matches the stored one in UTC."""
+        _, put_event = radicale_with_calendar
+        put_event("weekly", STORED_SERIES_ICS.format(organizer=mailbox))
+
+        resp = post(
+            _make_counter(
+                mailbox, "weekly@example.com", "RECURRENCE-ID:20261215T090000Z"
+            )
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["event"] == {
+            "start": "2026-12-15T14:00:00+01:00",
+            "end": "2026-12-15T15:30:00+01:00",
+            "all_day": False,
+        }
+
+    def test_returns_the_series_without_recurrence_id(
+        self, post, mailbox, radicale_with_calendar
+    ):
+        _, put_event = radicale_with_calendar
+        put_event("weekly", STORED_SERIES_ICS.format(organizer=mailbox))
+
+        resp = post(_make_counter(mailbox, "weekly@example.com"))
+
+        assert resp.status_code == 200
+        assert resp.json()["event"] == {
+            "start": "2026-12-01T10:00:00+01:00",
+            "end": "2026-12-01T11:00:00+01:00",
+            "all_day": False,
+        }
+
+    def test_returns_an_all_day_event(self, post, mailbox, radicale_with_calendar):
+        _, put_event = radicale_with_calendar
+        put_event(
+            "all-day",
+            """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:all-day@example.com
+DTSTART;VALUE=DATE:20261201
+SUMMARY:Offsite
+END:VEVENT
+END:VCALENDAR""",
+        )
+
+        resp = post(_make_counter(mailbox, "all-day@example.com"))
+
+        assert resp.status_code == 200
+        assert resp.json()["event"] == {
+            "start": "2026-12-01",
+            "end": "2026-12-02",
+            "all_day": True,
+        }
+
+    @pytest.mark.parametrize("ics_data", ["", "not a calendar"])
+    def test_rejects_missing_or_invalid_ics(
+        self, post, radicale_with_calendar, ics_data
+    ):
+        resp = post(ics_data)
+
+        assert resp.status_code == 400
+
+    def test_no_channel(self, api_client, mailbox, user_with_mailbox, settings):
+        settings.CALDAV_DEFAULT_URL = None
+        settings.CALDAV_DEFAULT_PASSWORD = None
+        api_client.force_authenticate(user=user_with_mailbox)
+
+        resp = api_client.post(
+            f"/api/v1.0/mailboxes/{mailbox.id}/calendar/stored-event/",
+            {"ics_data": _make_counter(mailbox, "x@example.com")},
+        )
+
+        assert resp.status_code == 404
+
+    def test_failed_search_is_an_upstream_error(self, post, mailbox):
+        """A failed search does not mean that the event does not exist."""
+        with (
+            mock.patch.object(
+                CalDAVService,
+                "list_calendars",
+                return_value=[{"id": "http://caldav/cal/", "name": "Cal"}],
+            ),
+            mock.patch.object(
+                CalDAVService, "_query_by_uid", side_effect=CalDAVError("timeout")
+            ),
+        ):
+            resp = post(_make_counter(mailbox, "weekly@example.com"))
+
+        assert resp.status_code == 502
 
 
 # ---------------------------------------------------------------------------

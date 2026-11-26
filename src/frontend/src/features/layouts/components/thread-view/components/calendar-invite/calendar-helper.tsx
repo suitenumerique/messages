@@ -5,6 +5,7 @@ import {
     IcsRecurrenceRule,
 } from "ts-ics";
 import { Contact } from "@/features/api/gen/models";
+import MailHelper from "@/features/utils/mail-helper";
 
 /**
  * Convert an ICS duration to milliseconds
@@ -69,6 +70,22 @@ export function collapseRecurringEvents(events: IcsEvent[]): IcsEvent[] {
 export { TextHelper } from "@/features/utils/text-helper";
 
 /**
+ * Return the guest who proposes a new time in an iTIP COUNTER.
+ *
+ * The proposer is the only attendee who is not the organizer. When the
+ * message lists several guests, the proposer is unknown.
+ */
+export function findCounterProposer(event: IcsEvent): IcsAttendee | undefined {
+    const organizer = event.organizer?.email
+        ? MailHelper.asciiLower(event.organizer.email)
+        : undefined;
+    const guests = (event.attendees ?? []).filter(
+        (a) => a.email && MailHelper.asciiLower(a.email) !== organizer,
+    );
+    return guests.length === 1 ? guests[0] : undefined;
+}
+
+/**
  * Detect all-day events by checking if start/end are both at midnight.
  * Checks both local and UTC midnight because ICS VALUE=DATE fields are
  * represented as UTC midnight by ts-ics, while dates constructed in local
@@ -84,15 +101,28 @@ export function isAllDayEvent(start: Date, end?: Date): boolean {
 }
 
 /**
- * Format a date range for display, handling all-day events and same-day events
+ * Return the day of a DATE value at local midnight.
+ *
+ * ts-ics gives a DATE value as UTC midnight. West of UTC, a local format of
+ * that instant shows the day before.
+ */
+export function dateValueToLocal(value: Date): Date {
+    return new Date(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+}
+
+/**
+ * Format a date range for display, handling all-day events and same-day events.
+ *
+ * Without ``allDay``, the range is all-day when it starts and ends at midnight.
+ * A timed event from midnight to midnight then shows as all-day, so give the
+ * flag when the source knows it.
  */
 export function formatEventDateRange(
     start: Date,
     end: Date | undefined,
     language: string,
+    allDay: boolean = isAllDayEvent(start, end),
 ): string {
-    const allDay = isAllDayEvent(start, end);
-
     const dateFormatter = new Intl.DateTimeFormat(language, {
         weekday: "long",
         year: "numeric",
@@ -103,8 +133,14 @@ export function formatEventDateRange(
     if (allDay) {
         const startDate = dateFormatter.format(start);
         if (!end) return startDate;
-        // All-day events: end date is exclusive in ICS (next day at midnight)
-        const adjustedEnd = new Date(end.getTime() - 86400000);
+        // The ICS end date is exclusive. Subtract one calendar day, not 24 hours,
+        // because a day is 23 hours long across a DST change.
+        const adjustedEnd = new Date(end);
+        if (end.getHours() === 0) {
+            adjustedEnd.setDate(adjustedEnd.getDate() - 1);
+        } else {
+            adjustedEnd.setUTCDate(adjustedEnd.getUTCDate() - 1);
+        }
         if (start.toDateString() === adjustedEnd.toDateString()) {
             return startDate; // Single all-day event
         }

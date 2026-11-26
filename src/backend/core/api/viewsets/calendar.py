@@ -373,6 +373,90 @@ class CalendarConflictsView(CalDAVChannelMixin, APIView):
 
 
 @extend_schema(tags=["calendar"])
+class CalendarStoredEventView(CalDAVChannelMixin, APIView):
+    """Find the stored times of the event that an iTIP message names.
+
+    A proposal for a new time (iTIP COUNTER) holds only the proposed time.
+    This view gives the current time of the event from the user's calendars.
+    It shares the throttle of the conflict check: one call per opened card.
+    """
+
+    permission_classes = [HasAccessToMailbox]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "caldav_conflicts"
+
+    @extend_schema(
+        request=inline_serializer(
+            name="CalendarStoredEventRequest",
+            fields={
+                "ics_data": drf_serializers.CharField(
+                    help_text="Raw ICS content of the iTIP message"
+                ),
+            },
+        ),
+        responses={
+            200: inline_serializer(
+                name="CalendarStoredEventResponse",
+                fields={
+                    "event": inline_serializer(
+                        name="CalendarStoredEventTimes",
+                        allow_null=True,
+                        fields={
+                            "start": drf_serializers.CharField(),
+                            "end": drf_serializers.CharField(),
+                            "all_day": drf_serializers.BooleanField(),
+                        },
+                        help_text=(
+                            "Stored times of the event, or of the occurrence "
+                            "that the RECURRENCE-ID names. Null when no "
+                            "calendar holds the event."
+                        ),
+                    ),
+                },
+            ),
+            400: OpenApiResponse(
+                response=_ERROR_SCHEMA,
+                description="Missing or invalid ics_data.",
+            ),
+            502: OpenApiResponse(
+                response=_ERROR_SCHEMA,
+                description="CalDAV server error while searching the event.",
+            ),
+        },
+    )
+    def post(self, request, mailbox_id):  # pylint: disable=unused-argument
+        """Return the stored times of the event, or null."""
+        ics_data = request.data.get("ics_data")
+        if not ics_data or not isinstance(ics_data, str):
+            return Response(
+                {"detail": "ics_data is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        service = self.require_caldav_service()
+        try:
+            times = service.find_stored_times(ics_data)
+        except ValueError:
+            return Response(
+                {"detail": "ics_data is not a valid calendar."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except CalDAVError as e:
+            # The message of the error holds the CalDAV URL. Do not log it.
+            logger.warning(
+                "CalDAV upstream failed during stored event search (HTTP status=%s).",
+                e.status_code,
+            )
+            return Response(
+                {
+                    "detail": "CalDAV server returned an error while searching the event."
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"event": times}, status=status.HTTP_200_OK)
+
+
+@extend_schema(tags=["calendar"])
 class CalendarListView(CalDAVChannelMixin, APIView):
     """List available calendars on the CalDAV server.
 

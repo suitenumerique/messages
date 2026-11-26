@@ -16,6 +16,8 @@ import {
     getAttendeeStatusInfo,
     createContactFromAttendee,
     collapseRecurringEvents,
+    findCounterProposer,
+    dateValueToLocal,
 } from "./calendar-helper";
 import { buildAttendeeList } from "./index";
 
@@ -175,6 +177,43 @@ describe("formatEventDateRange", () => {
         expect(result).toContain("15");
         expect(result).toContain("17"); // adjusted end: 18 - 1 day = 17
         expect(result).toContain("–");
+    });
+
+    it("should show a DATE value on its day west of UTC", () => {
+        const previousTz = process.env.TZ;
+        process.env.TZ = "America/Los_Angeles";
+        try {
+            const start = dateValueToLocal(new Date("2026-12-02T00:00:00Z"));
+            const end = dateValueToLocal(new Date("2026-12-03T00:00:00Z"));
+            const result = formatEventDateRange(start, end, "en-US");
+            expect(result).toContain("December 2");
+            expect(result).not.toContain("–");
+        } finally {
+            process.env.TZ = previousTz;
+        }
+    });
+
+    it("should keep a one-day all-day event on its day across a DST change", () => {
+        const previousTz = process.env.TZ;
+        process.env.TZ = "Europe/Paris";
+        try {
+            const start = new Date(2027, 2, 28);
+            const end = new Date(2027, 2, 29);
+            const result = formatEventDateRange(start, end, "en-US");
+            expect(result).toContain("March 28");
+            expect(result).not.toContain("–");
+        } finally {
+            process.env.TZ = previousTz;
+        }
+    });
+
+    it("should show the hours of a timed event from midnight to midnight", () => {
+        const start = new Date(2025, 5, 15);
+        const end = new Date(2025, 5, 16);
+        const result = formatEventDateRange(start, end, "en-US", false);
+        expect(result).toContain("15");
+        expect(result).toContain("16");
+        expect(result).toMatch(/12:00\sAM/);
     });
 
     it("should format same-day timed event with time range", () => {
@@ -892,5 +931,30 @@ describe("buildAttendeeList", () => {
         );
         expect(entries).toHaveLength(2);
         expect(entries[1].attendee.email).toBe("nicK@example.com");
+    });
+});
+
+describe("findCounterProposer", () => {
+    const event = (organizer: unknown, attendees: unknown[]) =>
+        ({ organizer, attendees }) as unknown as IcsEvent;
+
+    it("should return the only guest", () => {
+        const proposer = findCounterProposer(
+            event({ email: "Org@Example.com" }, [
+                { email: "org@example.com" },
+                { email: "guest@example.com" },
+            ]),
+        );
+        expect(proposer?.email).toBe("guest@example.com");
+    });
+
+    it("should return nothing when several guests are listed", () => {
+        const proposer = findCounterProposer(
+            event({ email: "org@example.com" }, [
+                { email: "first@example.com" },
+                { email: "second@example.com" },
+            ]),
+        );
+        expect(proposer).toBeUndefined();
     });
 });
