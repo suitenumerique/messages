@@ -275,7 +275,7 @@ def _itip_reply_to_apply(ctx, inbound_message, mailbox, deferral_expired):
     Returns ``(None, None)`` when the message has no REPLY to apply. Else,
     records the trust flag of the REPLY in the postmark.
     """
-    if not settings.CALENDAR_ITIP_REPLY_ENABLED or ctx.is_spam or deferral_expired:
+    if not settings.CALDAV_ITIP_REPLY_ENABLED or ctx.is_spam or deferral_expired:
         return None, None
     # An absent verdict is not sufficient to write to a calendar: it does not
     # prove the From address. Internal mail comes from an authenticated
@@ -288,7 +288,7 @@ def _itip_reply_to_apply(ctx, inbound_message, mailbox, deferral_expired):
     ics, itip_flag, attendee = itip.evaluate_inbound_reply(
         ctx.parsed_email,
         auth_verdict,
-        settings.CALENDAR_ITIP_REPLY_APPLY_UNVERIFIED,
+        settings.CALDAV_ITIP_REPLY_APPLY_UNVERIFIED,
     )
     # Without a calendar backend, the flag would claim an update that never
     # happens.

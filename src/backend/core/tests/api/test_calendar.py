@@ -3523,7 +3523,7 @@ class TestApplyReplyInboundE2E:
     def test_verified_reply_applies_and_flags(
         self, settings, mailbox, caldav_channel, radicale_with_calendar
     ):
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         # Inbound auth configured + a verified verdict (None) is a genuine pass.
         settings.SPAM_CONFIG = {"inbound_auth": "native"}
         calendar_url, put_event = radicale_with_calendar
@@ -3547,7 +3547,7 @@ class TestApplyReplyInboundE2E:
     ):
         # Auth disabled instance-wide: an absent verdict must NOT count as
         # verified, so the reply is not applied and not flagged.
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         settings.SPAM_CONFIG = {}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-noauth@example.com"
@@ -3566,7 +3566,7 @@ class TestApplyReplyInboundE2E:
     ):
         # A typo'd mode ("nativ") makes check_inbound_authentication return None;
         # it must be treated as unverifiable, not verified.
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         settings.SPAM_CONFIG = {"inbound_auth": "nativ"}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-typo@example.com"
@@ -3605,7 +3605,7 @@ class TestApplyReplyInboundE2E:
         symbols,
         expected,
     ):
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         settings.SPAM_CONFIG = {"inbound_auth": "rspamd"}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-aligned@example.com"
@@ -3624,7 +3624,7 @@ class TestApplyReplyInboundE2E:
     ):
         # Mail from a mailbox of the same instance skips the sender checks:
         # the sender is an authenticated mailbox.
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         settings.SPAM_CONFIG = {}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-internal@example.com"
@@ -3652,7 +3652,7 @@ class TestApplyReplyInboundE2E:
     def test_forged_reply_delivered_but_not_applied(
         self, settings, mailbox, caldav_channel, radicale_with_calendar
     ):
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-forged@example.com"
         self._seed(put_event, uid, str(mailbox))
@@ -3672,7 +3672,7 @@ class TestApplyReplyInboundE2E:
     def test_flag_off_does_not_apply(
         self, settings, mailbox, caldav_channel, radicale_with_calendar
     ):
-        settings.CALENDAR_ITIP_REPLY_ENABLED = False
+        settings.CALDAV_ITIP_REPLY_ENABLED = False
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-flagoff@example.com"
         self._seed(put_event, uid, str(mailbox))
@@ -3685,7 +3685,7 @@ class TestApplyReplyInboundE2E:
         # Verified reply, but no per-mailbox channel and no instance default:
         # delivered, never flagged/applied. (auth configured + verified so the
         # skip is the backend check, not the auth gate.)
-        settings.CALENDAR_ITIP_REPLY_ENABLED = True
+        settings.CALDAV_ITIP_REPLY_ENABLED = True
         settings.SPAM_CONFIG = {"inbound_auth": "native"}
         settings.CALDAV_DEFAULT_URL = ""
         settings.CALDAV_DEFAULT_PASSWORD = ""
