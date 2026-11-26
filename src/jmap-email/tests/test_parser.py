@@ -2247,6 +2247,29 @@ class TestParserSecurityRegressions:
         # the answer is NOT.
         assert addr != "nontrusted@evil.com"
 
+    @pytest.mark.parametrize(
+        "header",
+        [
+            "nontrusted@evil.com <real@you.com>",
+            "<nontrusted@evil.com> <real@you.com>",
+            "nontrusted@evil.com (Name) <real@you.com>",
+        ],
+    )
+    def test_address_list_keeps_the_angle_addr_of_each_mailbox(self, header):
+        """``parse_addresses`` resolves a mailbox like ``parse_address``.
+
+        A DMARC check reads the angle-addr. A consumer that keys on the
+        first tuple would trust the address in the display name.
+        """
+        assert parse_addresses(header) == [("", "real@you.com")]
+        assert parse_addresses(f"a@b.com, {header}, c@d.com") == [
+            ("", "a@b.com"),
+            ("", "real@you.com"),
+            ("", "c@d.com"),
+        ]
+        raw = f"From: {header}\r\nSubject: t\r\n\r\nx\r\n".encode()
+        assert [a["email"] for a in parse_email(raw)["from"]] == ["real@you.com"]
+
     def test_portswigger_encoded_word_in_local_part_does_not_smuggle(self):
         """PortSwigger / James Kettle "Splitting the Email Atom"
         (DEF CON 32, 2024): RFC 2047 encoded-words inside an
