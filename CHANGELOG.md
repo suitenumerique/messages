@@ -24,6 +24,8 @@ and this project adheres to
   `DSFR_THEME_FORGOT_PASSWORD_URL` to the `lst-dsfr` theme
 - Add `DSFR_THEME_LAGAUFRE_WIDGET_CONFIG` to show the La Suite services button
   in the account console header of the `lst-dsfr` theme
+- Route inbound mail to several Messages instances from one pymta, by
+  recipient domain (`PYMTA_TENANTS_FILE`)
 
 ### Changed
 

@@ -328,6 +328,8 @@ OPERATOR_TRIGGERABLE = {
     "mda_pool_exhausted",
     "mda_check_no_verdict",
     "mda_body_not_an_object",
+    "tenants_loaded",
+    "tenants_reload_failed",
     "handler_error",
     "session_error",
     "unhandled_error",

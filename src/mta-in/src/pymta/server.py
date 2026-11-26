@@ -18,12 +18,14 @@ import signal
 import ssl
 import time
 
+from prometheus_client import REGISTRY
+
 from . import logfmt, metrics, runtime, settings
 from .controller import Listener, publish_certificate_expiry, served_key_types
 from .handler import InboundHandler
 from .limits import IPGate
-from .mda_async import MDAClient
 from .smtp_protocol import close_idle_sessions, log_abandoned_sessions
+from .tenants import build_router
 
 # Named, not ``__name__``: run as ``python -m pymta.server``, this module is
 # ``__main__``.
@@ -245,13 +247,15 @@ def _check_legacy_names() -> None:
 async def _serve() -> None:
     _check_proxy_trust_config()
     _check_legacy_names()
-    mda_client = MDAClient()
+    router = build_router()
+    tenant_breakers = metrics.TenantBreakers(router)
+    REGISTRY.register(tenant_breakers)
     try:
-        await mda_client.start()
+        await router.start()
         # Computed at scrape time: the breaker's cooldown can end with no call
-        # to notice it.
-        metrics.MDA_BREAKER_OPEN.set_function(lambda: 1.0 if mda_client.breaker_is_open() else 0.0)
-        handler = InboundHandler(mda_client)
+        # to notice it. With several tenants, 1 while any of their MDAs is shed.
+        metrics.MDA_BREAKER_OPEN.set_function(lambda: 1.0 if router.breaker_is_open() else 0.0)
+        handler = InboundHandler(router=router)
         ip_gate = IPGate(
             # None: the gate reads each cap from settings on every acquire.
             max_total=None,
@@ -319,7 +323,8 @@ async def _serve() -> None:
         finally:
             await _drain_and_close(server, ip_gate)
     finally:
-        await mda_client.close()
+        REGISTRY.unregister(tenant_breakers)
+        await router.close()
 
 
 def main() -> None:

@@ -12,6 +12,7 @@ from secrets import compare_digest
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 from prometheus_client import Counter, Gauge, Histogram, make_wsgi_app
+from prometheus_client.core import GaugeMetricFamily
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,22 @@ MDA_BREAKER_OPEN = Gauge(
     f"{_METRICS_NAMESPACE}_mda_breaker_open",
     "1 while the MDA circuit breaker is open and calls short-circuit to 451.",
 )
+
+
+class TenantBreakers:
+    def __init__(self, router):
+        self._router = router
+
+    def collect(self):
+        gauge = GaugeMetricFamily(
+            f"{_METRICS_NAMESPACE}_mda_tenant_breaker_open",
+            "1 while this tenant's MDA circuit breaker is open and its calls short-circuit to 451.",
+            labels=("tenant",),
+        )
+        for tenant, client in self._router.clients():
+            gauge.add_metric((tenant,), int(client.breaker_is_open()))
+        yield gauge
+
 
 UNDER_STRESS = Gauge(
     f"{_METRICS_NAMESPACE}_under_stress",

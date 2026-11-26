@@ -454,6 +454,20 @@ def test_short_secret_logs_warning(caplog):
     assert secret not in caplog.text
 
 
+def test_a_tenant_client_names_its_tenant_in_its_logs(caplog):
+    caplog.set_level("WARNING")
+    MDAClient(base_url="https://mda.example.com/api/", secret="too-short", tenant="client-a")
+    record = next(r for r in caplog.records if r.message == "mda_secret_weak")
+    assert record.tenant == "client-a"
+
+
+def test_a_single_mda_logs_no_tenant(caplog):
+    caplog.set_level("WARNING")
+    MDAClient(base_url="https://mda.example.com/api/", secret="too-short")
+    record = next(r for r in caplog.records if r.message == "mda_secret_weak")
+    assert not hasattr(record, "tenant")
+
+
 def test_local_http_url_is_silent(caplog):
     caplog.set_level("WARNING")
     MDAClient(base_url="http://127.0.0.1:8000/api/", secret="x" * 32)

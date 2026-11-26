@@ -33,6 +33,7 @@ from .address import AddressError, strip_brackets, validate_envelope_address
 from .mda_async import MDAClient, MDAResult
 from .session_log import address_field, recipients_fields
 from .smtp_protocol import Reply
+from .tenants import SingleTenant, TenantRouter
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,27 @@ def _refusal(reply: str, reason: str, **fields) -> Reply:
     return Reply(reply, reason, fields)
 
 
+def _unknown_recipient(connection, clean: str, reason: str) -> Reply:
+    """Refuse a recipient that does not exist, and charge it to the miss budget."""
+    metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
+    misses = connection.rcpt_missed()
+    # The last miss of the source, over all its sessions, or of this
+    # session. Either way this address still gets its 550: answered
+    # 421, the sender would ask about it again.
+    if not connection.source_spent() and misses >= rcpt_miss_budget(connection):
+        metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
+        connection.disconnect_at_next_command(
+            "421 4.7.0 Too many unknown recipients, goodbye",
+            "max_rcpt_misses_per_session",
+        )
+    return _refusal(
+        "550 5.1.1 No such recipient",
+        reason,
+        recipient=address_field(clean),
+        misses=misses,
+    )
+
+
 def _message_fields(envelope, size: int) -> dict:
     """What a line about a whole message names: sender, recipients, size.
 
@@ -191,10 +213,20 @@ def _log_outcome(connection, started: float, outcome: str, size: int, **extra) -
 
 
 class InboundHandler:
-    """One instance per server process; called concurrently from many sessions."""
+    """One instance per server process; called concurrently from many sessions.
 
-    def __init__(self, mda_client: MDAClient):
-        self.mda = mda_client
+    Each recipient is checked with the MDA its domain routes to. A message
+    whose recipients span several MDAs (several Messages instances behind one
+    MTA) is delivered once to each, with only that MDA's recipients.
+    """
+
+    def __init__(
+        self,
+        mda_client: MDAClient | None = None,
+        *,
+        router: SingleTenant | TenantRouter | None = None,
+    ):
+        self.router = router if router is not None else SingleTenant(mda_client)
 
     # ------------------------------------------------------------------ EHLO
     async def handle_HELO(self, connection, hostname: str) -> str:
@@ -327,7 +359,13 @@ class InboundHandler:
             metrics.RCPT_TOTAL.labels(result="accepted").inc()
             return Reply("250 2.1.5 OK")
 
-        result = await self.mda.check_recipient(clean, session=connection.session_id)
+        route = self.router.route(clean)
+        if route is None:
+            # A domain no Messages instance behind this MTA serves. Counted as
+            # a miss: probing for served domains is probing for mailboxes.
+            return _unknown_recipient(connection, clean, "unknown_domain")
+
+        result = await route.mda.check_recipient(clean, session=connection.session_id)
         if not result.ok:
             # Whatever the status: no failed check is a verdict on the address.
             metrics.RCPT_TOTAL.labels(result="rejected_temp").inc()
@@ -359,25 +397,10 @@ class InboundHandler:
             return Reply("451 4.3.0 Recipient verification temporarily unavailable", logged=True)
 
         if not verdict:
-            metrics.RCPT_TOTAL.labels(result="rejected_perm").inc()
-            misses = connection.rcpt_missed()
-            # The last miss of the source, over all its sessions, or of this
-            # session. Either way this address still gets its 550: answered
-            # 421, the sender would ask about it again.
-            if not connection.source_spent() and misses >= rcpt_miss_budget(connection):
-                metrics.SECURITY_REJECTIONS.labels(reason="max_rcpt_misses_per_session").inc()
-                connection.disconnect_at_next_command(
-                    "421 4.7.0 Too many unknown recipients, goodbye",
-                    "max_rcpt_misses_per_session",
-                )
-            return _refusal(
-                "550 5.1.1 No such recipient",
-                "unknown_recipient",
-                recipient=address_field(clean),
-                misses=misses,
-            )
+            return _unknown_recipient(connection, clean, "unknown_recipient")
 
         envelope.rcpt_tos.append(clean)
+        envelope.rcpt_routes[clean] = route
         metrics.RCPT_TOTAL.labels(result="accepted").inc()
         return Reply("250 2.1.5 OK")
 
@@ -404,21 +427,39 @@ class InboundHandler:
                 **_message_fields(envelope, size),
             )
 
+        # One delivery per MDA, in the order its first recipient was given,
+        # each naming only its own recipients: one Messages instance does not
+        # learn of recipients on another that only the envelope names (Bcc).
+        # Keyed by client, not tenant name: a reload between two RCPTs can
+        # give one tenant a new client, and each recipient goes through the
+        # one that accepted it.
+        groups: dict[MDAClient, tuple[str, list[str]]] = {}
+        for rcpt in envelope.rcpt_tos:
+            route = envelope.rcpt_routes[rcpt]
+            groups.setdefault(route.mda, (route.tenant, []))[1].append(rcpt)
+
         try:
-            # Before building the coroutine: a budget already spent raises
+            # Before building the coroutines: a budget already spent raises
             # here, and a coroutine never awaited would add a RuntimeWarning.
             budget = _remaining_data_budget(connection)
-            result: MDAResult = await asyncio.wait_for(
-                self.mda.deliver(
-                    message=content,
-                    sender=envelope.mail_from,
-                    original_recipients=list(envelope.rcpt_tos),
-                    # Never None: handle_MAIL refuses a session without one.
-                    client_address=session.client_ip,
-                    client_port=None if session.client_port is None else str(session.client_port),
-                    client_helo=session.host_name,
-                    session=connection.session_id,
-                    transport=_transport(session, envelope),
+            results: list[MDAResult] = await asyncio.wait_for(
+                asyncio.gather(
+                    *(
+                        mda.deliver(
+                            message=content,
+                            sender=envelope.mail_from,
+                            original_recipients=rcpts,
+                            # Never None: handle_MAIL refuses a session without one.
+                            client_address=session.client_ip,
+                            client_port=None
+                            if session.client_port is None
+                            else str(session.client_port),
+                            client_helo=session.host_name,
+                            session=connection.session_id,
+                            transport=_transport(session, envelope),
+                        )
+                        for mda, (_, rcpts) in groups.items()
+                    )
                 ),
                 timeout=budget,
             )
@@ -437,21 +478,32 @@ class InboundHandler:
 
         metrics.MESSAGE_BYTES.observe(size)
 
-        if result.ok and result.payload.get("status") == "ok":
+        failed = [
+            (tenant, result)
+            for (tenant, _), result in zip(groups.values(), results, strict=True)
+            if not (result.ok and result.payload.get("status") == "ok")
+        ]
+        if not failed:
             metrics.MESSAGES_TOTAL.labels(result="delivered").inc()
             _log_outcome(connection, started, "delivered", size)
             return Reply("250 2.0.0 Message accepted for delivery")
 
-        # Anything but a clear "ok" defers. On a 207 the MDA delivered to some
-        # recipients only: a retry of the whole envelope reaches the rest,
-        # with duplicates for the others. The Postfix milter does the same.
-        # Permanent refusals: see ``mda_async._PERMANENT_STATUSES``.
+        # Anything but a clear "ok" from every MDA defers. On a 207 the MDA
+        # delivered to some recipients only, and with several MDAs some may
+        # have taken the message: a retry of the whole envelope reaches the
+        # rest, with duplicates for the others. The Postfix milter does the
+        # same. Permanent refusals: see ``mda_async._PERMANENT_STATUSES``, and
+        # only when every MDA gave one.
         #
         # ``logged``: the outcome line stands in for the ``reject`` line.
-        if result.temp_fail or result.ok:
+        tenant, first = failed[0]
+        extra = {"status": first.status_code}
+        if tenant:
+            extra["tenant"] = tenant
+        if len(failed) < len(results) or any(r.temp_fail or r.ok for _, r in failed):
             metrics.MESSAGES_TOTAL.labels(result="rejected_temp").inc()
-            _log_outcome(connection, started, "deferred", size, status=result.status_code)
+            _log_outcome(connection, started, "deferred", size, **extra)
             return Reply("451 4.3.0 Delivery temporarily unavailable", logged=True)
         metrics.MESSAGES_TOTAL.labels(result="rejected_perm").inc()
-        _log_outcome(connection, started, "rejected", size, status=result.status_code)
+        _log_outcome(connection, started, "rejected", size, **extra)
         return Reply("554 5.6.0 Message rejected by delivery agent", logged=True)

@@ -144,6 +144,7 @@ class MDAClient:
         *,
         base_url: str | None = None,
         secret: str | None = None,
+        tenant: str = "",
         timeout: int | None = None,
         breaker_threshold: int | None = None,
         breaker_cooldown: int | None = None,
@@ -152,6 +153,7 @@ class MDAClient:
     ):
         self.base_url = (base_url or settings.MDA_API_BASE_URL).rstrip("/") + "/"
         self.secret = secret or settings.MDA_API_SECRET
+        self.tenant = tenant
         self.timeout = timeout if timeout is not None else settings.MDA_API_TIMEOUT
         self.jwt_ttl = jwt_ttl if jwt_ttl is not None else settings.MDA_API_JWT_TTL
         self._breaker_threshold = (
@@ -172,6 +174,9 @@ class MDAClient:
         self._client: httpx.AsyncClient | None = None
         self._validate_credentials()
 
+    def _tenant_fields(self) -> dict:
+        return {"tenant": self.tenant} if self.tenant else {}
+
     def _validate_credentials(self) -> None:
         """Refuse a missing secret; warn about a weak one or a plaintext non-local MDA URL.
 
@@ -185,6 +190,7 @@ class MDAClient:
             logger.warning(
                 "mda_url_plaintext",
                 extra={
+                    **self._tenant_fields(),
                     "host": host,
                     "detail": "the JWT bearer token will cross the network in clear; use https",
                 },
@@ -193,7 +199,10 @@ class MDAClient:
             # No MDA call could be signed.
             logger.error(
                 "mda_secret_missing",
-                extra={"detail": "no MDA call can be signed; refusing to start"},
+                extra={
+                    **self._tenant_fields(),
+                    "detail": "no MDA call can be signed; refusing to start",
+                },
             )
             raise ValueError("MDA_API_SECRET is not set; pymta cannot sign its calls to the MDA")
         if len(self.secret) < _MIN_SECRET_LENGTH:
@@ -202,6 +211,7 @@ class MDAClient:
                 # The length is not logged: it would narrow the search for
                 # someone who reads the log and captures a JWT.
                 extra={
+                    **self._tenant_fields(),
                     "minimum": _MIN_SECRET_LENGTH,
                     "detail": "short HS256 secrets are brute-forceable from one captured JWT",
                 },
@@ -297,6 +307,7 @@ class MDAClient:
             logger.warning(
                 "mda_breaker_opened",
                 extra={
+                    **self._tenant_fields(),
                     "consecutive_failures": self._consecutive_failures,
                     "cooldown_seconds": self._breaker_cooldown,
                 },
@@ -307,7 +318,10 @@ class MDAClient:
             # In flight since before the breaker opened: the probe decides.
             return
         if self._consecutive_failures:
-            logger.info("mda_recovered", extra={"after_failures": self._consecutive_failures})
+            logger.info(
+                "mda_recovered",
+                extra={**self._tenant_fields(), "after_failures": self._consecutive_failures},
+            )
         self._consecutive_failures = 0
         if self._open_until is not None:
             self._generation += 1
@@ -395,7 +409,8 @@ class MDAClient:
                 endpoint=endpoint_label, result="pool_timeout"
             ).observe(self._clock() - start)
             logger.warning(
-                "mda_pool_exhausted", extra={"endpoint": endpoint_label, "session_id": session}
+                "mda_pool_exhausted",
+                extra={**self._tenant_fields(), "endpoint": endpoint_label, "session_id": session},
             )
             return MDAResult.unanswered(), None
         except httpx.TimeoutException, TimeoutError:
@@ -407,6 +422,7 @@ class MDAClient:
             logger.warning(
                 "mda_timeout",
                 extra={
+                    **self._tenant_fields(),
                     "endpoint": endpoint_label,
                     "session_id": session,
                     "elapsed_seconds": round(self._clock() - start, 3),
@@ -422,7 +438,7 @@ class MDAClient:
             logger.warning(
                 "mda_transport_error",
                 exc_info=True,
-                extra={"endpoint": endpoint_label, "session_id": session},
+                extra={**self._tenant_fields(), "endpoint": endpoint_label, "session_id": session},
             )
             return MDAResult.unanswered(), False
 
@@ -457,6 +473,7 @@ class MDAClient:
             elapsed
         )
         fields = {
+            **self._tenant_fields(),
             "endpoint": endpoint_label,
             "session_id": session,
             "status": status,
