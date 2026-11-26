@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import StrEnum
 from urllib.parse import quote, unquote, urljoin, urlparse
+from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings as django_settings
 
@@ -22,6 +23,7 @@ from icalendar import Calendar as ICalendar
 
 from core.mda.addresses import ascii_lower, normalize_address
 from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.stored_times import stored_times
 from core.services.ssrf import (
     SSRFProtectedAdapter,
     SSRFValidationError,
@@ -576,6 +578,71 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
                 "calendar_name": calendar_name,
             }
         return None
+
+    def find_stored_times(self, ics_data: str) -> dict[str, str | bool] | None:
+        """Return the stored times of the event that an iTIP message names.
+
+        The message names an event by its UID, and one occurrence of it when
+        it has a RECURRENCE-ID. The search covers every calendar of the user.
+        The result has the keys ``start``, ``end`` (ISO 8601) and
+        ``all_day``. It is None when no calendar holds the event. It raises
+        CalDAVError when the event is not found and a search failed.
+        """
+        message_event = next(iter(ICalendar.from_ical(ics_data).walk("VEVENT")), None)
+        if message_event is None or not message_event.get("UID"):
+            return None
+        uid = str(message_event["UID"])
+        recurrence_id = message_event.get("RECURRENCE-ID")
+        search_error: CalDAVError | None = None
+        for cal in self.list_calendars():
+            try:
+                stored_texts = self._query_by_uid(cal["id"], uid)
+            except CalDAVError as e:
+                logger.warning("Could not search calendar %s by UID", cal["name"])
+                search_error = e
+                continue
+            for ics_text in stored_texts:
+                times = stored_times(ics_text, uid, recurrence_id)
+                if times is not None:
+                    return times
+        # A calendar that was not searched can hold the event. "Not found"
+        # is then not known.
+        if search_error is not None:
+            raise search_error
+        return None
+
+    def _query_by_uid(self, calendar_url: str, uid: str) -> list[str]:
+        body = (
+            '<?xml version="1.0"?>'
+            '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+            "<d:prop><c:calendar-data/></d:prop>"
+            "<c:filter>"
+            '<c:comp-filter name="VCALENDAR">'
+            '<c:comp-filter name="VEVENT">'
+            '<c:prop-filter name="UID">'
+            f'<c:text-match collation="i;octet">{xml_escape(uid)}</c:text-match>'
+            "</c:prop-filter>"
+            "</c:comp-filter>"
+            "</c:comp-filter>"
+            "</c:filter>"
+            "</c:calendar-query>"
+        )
+        resp = self._request(
+            "REPORT",
+            calendar_url,
+            data=body.encode("utf-8"),
+            headers={
+                "Depth": "1",
+                "Content-Type": "application/xml; charset=utf-8",
+            },
+        )
+        root = ET.fromstring(resp.text)
+        data_key = f".//{_q(CALDAV_NS, 'calendar-data')}"
+        return [
+            data
+            for r in root.findall(_q(DAV_NS, "response"))
+            if (data := r.findtext(data_key))
+        ]
 
     def add_event(self, ics_data, calendar_id=None):
         """Store an event on the selected calendar (or the default one).

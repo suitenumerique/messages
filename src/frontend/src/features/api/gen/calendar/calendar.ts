@@ -29,6 +29,8 @@ import type {
   CalendarListResponse,
   CalendarRsvpRequestRequest,
   CalendarRsvpResponse,
+  CalendarStoredEventRequestRequest,
+  CalendarStoredEventResponse,
   MailboxesCalendarAddCreate400,
   MailboxesCalendarAddCreate503,
   MailboxesCalendarCalendarsRetrieve403,
@@ -37,6 +39,8 @@ import type {
   MailboxesCalendarConflictsCreate502,
   MailboxesCalendarRsvpCreate400,
   MailboxesCalendarRsvpCreate503,
+  MailboxesCalendarStoredEventCreate400,
+  MailboxesCalendarStoredEventCreate502,
 } from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
@@ -655,6 +659,137 @@ export const useMailboxesCalendarRsvpCreate = <
 > => {
   const mutationOptions =
     getMailboxesCalendarRsvpCreateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};
+/**
+ * Return the stored times of the event, or null.
+ */
+export type mailboxesCalendarStoredEventCreateResponse200 = {
+  data: CalendarStoredEventResponse;
+  status: 200;
+};
+
+export type mailboxesCalendarStoredEventCreateResponse400 = {
+  data: MailboxesCalendarStoredEventCreate400;
+  status: 400;
+};
+
+export type mailboxesCalendarStoredEventCreateResponse502 = {
+  data: MailboxesCalendarStoredEventCreate502;
+  status: 502;
+};
+
+export type mailboxesCalendarStoredEventCreateResponseSuccess =
+  mailboxesCalendarStoredEventCreateResponse200 & {
+    headers: Headers;
+  };
+export type mailboxesCalendarStoredEventCreateResponseError = (
+  | mailboxesCalendarStoredEventCreateResponse400
+  | mailboxesCalendarStoredEventCreateResponse502
+) & {
+  headers: Headers;
+};
+
+export type mailboxesCalendarStoredEventCreateResponse =
+  | mailboxesCalendarStoredEventCreateResponseSuccess
+  | mailboxesCalendarStoredEventCreateResponseError;
+
+export const getMailboxesCalendarStoredEventCreateUrl = (mailboxId: string) => {
+  return `/api/v1.0/mailboxes/${mailboxId}/calendar/stored-event/`;
+};
+
+export const mailboxesCalendarStoredEventCreate = async (
+  mailboxId: string,
+  calendarStoredEventRequestRequest: CalendarStoredEventRequestRequest,
+  options?: RequestInit,
+): Promise<mailboxesCalendarStoredEventCreateResponse> => {
+  return fetchAPI<mailboxesCalendarStoredEventCreateResponse>(
+    getMailboxesCalendarStoredEventCreateUrl(mailboxId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(calendarStoredEventRequestRequest),
+    },
+  );
+};
+
+export const getMailboxesCalendarStoredEventCreateMutationOptions = <
+  TError = ErrorType<
+    | MailboxesCalendarStoredEventCreate400
+    | MailboxesCalendarStoredEventCreate502
+  >,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>,
+    TError,
+    { mailboxId: string; data: CalendarStoredEventRequestRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>,
+  TError,
+  { mailboxId: string; data: CalendarStoredEventRequestRequest },
+  TContext
+> => {
+  const mutationKey = ["mailboxesCalendarStoredEventCreate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>,
+    { mailboxId: string; data: CalendarStoredEventRequestRequest }
+  > = (props) => {
+    const { mailboxId, data } = props ?? {};
+
+    return mailboxesCalendarStoredEventCreate(mailboxId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MailboxesCalendarStoredEventCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>
+>;
+export type MailboxesCalendarStoredEventCreateMutationBody =
+  CalendarStoredEventRequestRequest;
+export type MailboxesCalendarStoredEventCreateMutationError = ErrorType<
+  MailboxesCalendarStoredEventCreate400 | MailboxesCalendarStoredEventCreate502
+>;
+
+export const useMailboxesCalendarStoredEventCreate = <
+  TError = ErrorType<
+    | MailboxesCalendarStoredEventCreate400
+    | MailboxesCalendarStoredEventCreate502
+  >,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>,
+      TError,
+      { mailboxId: string; data: CalendarStoredEventRequestRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof mailboxesCalendarStoredEventCreate>>,
+  TError,
+  { mailboxId: string; data: CalendarStoredEventRequestRequest },
+  TContext
+> => {
+  const mutationOptions =
+    getMailboxesCalendarStoredEventCreateMutationOptions(options);
 
   return useMutation(mutationOptions, queryClient);
 };
