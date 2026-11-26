@@ -129,6 +129,20 @@ class TestEvaluateInboundReply:
         parsed = _parsed(ics, "nic\u212a@corp.example")
         assert itip.evaluate_inbound_reply(parsed, None, False) == (None, None, None)
 
+    def test_from_with_two_addresses_is_rejected(self):
+        # ``From: alice@corp.example <mallory@attacker.example>`` gives two
+        # addresses. The checks of the sender read Mallory.
+        parsed = _parsed(REPLY_ICS, "alice@corp.example")
+        parsed["from"].append({"email": "mallory@attacker.example"})
+        assert itip.evaluate_inbound_reply(parsed, None, False) == (None, None, None)
+
+    def test_from_with_the_same_address_twice_is_accepted(self):
+        # ``From: Alice@Corp.example <alice@corp.example>`` is common.
+        parsed = _parsed(REPLY_ICS, "Alice@Corp.example")
+        parsed["from"].append({"email": "alice@corp.example"})
+        _ics, _flag, attendee = itip.evaluate_inbound_reply(parsed, None, False)
+        assert attendee == "alice@corp.example"
+
     def test_from_not_an_rsvping_attendee_rejected(self):
         # From is the organizer, not an ATTENDEE carrying a PARTSTAT.
         parsed = _parsed(REPLY_ICS, "org@example.com")

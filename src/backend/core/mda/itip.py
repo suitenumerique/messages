@@ -4,7 +4,7 @@ import logging
 from enum import StrEnum
 
 from icalendar import Calendar as ICalendar
-from jmap_email import body_part_text, first_address_email
+from jmap_email import body_part_text
 
 from core.services.calendar.service import attendee_key
 
@@ -144,18 +144,26 @@ def evaluate_inbound_reply(parsed_email, auth_verdict, apply_unverified):
     ATTENDEE with a PARTSTAT. This stops a crafted reply where the From
     ATTENDEE has no PARTSTAT and another ATTENDEE has one.
     """
-    ics = find_reply_ics(parsed_email)
-    if ics is None:
+    should_apply, flag = decide(auth_verdict, apply_unverified)
+    if not should_apply:
         return None, None, None
     # Not ``str.lower()``: it maps some non-ASCII letters to ASCII letters, and
     # the sender would then match the address of another attendee.
-    from_addr = attendee_key(first_address_email(parsed_email.get("from")))
+    senders = {
+        attendee_key(address.get("email")) for address in parsed_email.get("from") or []
+    }
+    # ``alice@a.example <bob@b.example>`` gives two addresses. The checks of
+    # the sender can read Bob, and Alice must not get the answer of Bob.
+    if len(senders) != 1:
+        logger.info("iTIP REPLY From has %d addresses; skipping", len(senders))
+        return None, None, None
+    (from_addr,) = senders
     if not from_addr:
+        return None, None, None
+    ics = find_reply_ics(parsed_email)
+    if ics is None:
         return None, None, None
     if reply_partstat(ics, from_addr) is None:
         logger.info("iTIP REPLY From is not an RSVPing attendee; skipping")
-        return None, None, None
-    should_apply, flag = decide(auth_verdict, apply_unverified)
-    if not should_apply:
         return None, None, None
     return ics, flag, from_addr
