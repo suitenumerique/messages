@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Button, IconType, Spinner } from "@gouvfr-lasuite/ui-components";
+import { ClockArrowCirclepath, Reply } from "@gouvfr-lasuite/ui-components/icons";
 import { Icon } from "@/features/ui/components/icon";
 import {
     convertIcsCalendar,
@@ -1252,7 +1253,7 @@ export const CalendarInvite = ({
                     className="calendar-invite__method-banner calendar-invite__method-banner--answer"
                     role="note"
                 >
-                    <Icon name={isCounter ? "update" : "reply"} type={IconType.OUTLINED} />
+                    <Icon icon={isCounter ? ClockArrowCirclepath : Reply} />
                     <span>{isCounter ? t("New time proposed") : t("Invitation response")}</span>
                 </div>
             )}
