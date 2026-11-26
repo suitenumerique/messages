@@ -628,6 +628,28 @@ class TestSendMessageRedisLock(TransactionTestCase):
 
 
 @pytest.mark.django_db
+class TestPrepareOutboundMessageHiddenContacts:
+    """Test what sending a message does to the contacts hidden from suggestions."""
+
+    def test_sending_to_a_hidden_contact_suggests_it_again(
+        self, user, message, mailbox_sender
+    ):
+        """Writing to an address shows it is wanted again."""
+        recipient = factories.ContactFactory(mailbox=mailbox_sender, is_suggested=False)
+        other = factories.ContactFactory(mailbox=mailbox_sender, is_suggested=False)
+        factories.MessageRecipientFactory(message=message, contact=recipient)
+
+        outbound.prepare_outbound_message(
+            mailbox_sender, message, "Hello", "<p>Hello</p>", user
+        )
+
+        recipient.refresh_from_db()
+        other.refresh_from_db()
+        assert recipient.is_suggested is True
+        assert other.is_suggested is False
+
+
+@pytest.mark.django_db
 class TestPrepareOutboundMessageSignature:
     """Test signature handling in prepare_outbound_message function."""
 

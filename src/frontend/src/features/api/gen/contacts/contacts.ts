@@ -5,20 +5,28 @@
  * This is the messages API schema.
  * OpenAPI spec version: 1.0.0 (v1.0)
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { Contact, ContactsListParams } from ".././models";
+import type {
+  Contact,
+  ContactSuggestion,
+  ContactsListParams,
+  PatchedContactSuggestionUpdateRequest,
+} from ".././models";
 
 import { fetchAPI } from "../../fetch-api";
 import type { ErrorType } from "../../fetch-api";
@@ -27,15 +35,17 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
  * List contacts with optional filtering by mailbox and search query.
-For a mailbox, it returns all contacts in the mailbox and all contacts
-in the same domain as the mailbox.
+For a mailbox, it returns the contacts the mailbox sent a message to
+and all contacts in the same domain as the mailbox. The contacts hidden
+from the suggestions come with ``is_suggested`` false, so that a search
+can still find them.
 
 Query parameters:
 - mailbox_id: Optional UUID to filter contacts by mailbox
 - q: Optional search query for name or email (case insensitive)
  */
 export type contactsListResponse200 = {
-  data: Contact[];
+  data: ContactSuggestion[];
   status: 200;
 };
 
@@ -371,3 +381,113 @@ export function useContactsRetrieve<
 
   return query;
 }
+
+/**
+ * Hide a contact from the recipient suggestions of its mailbox, or show
+it again. Requires an editor role or above on that mailbox.
+
+Hiding stands for every user of the mailbox, and a contact cannot be
+deleted instead as the messages it sent or received reference it. It
+is suggested again once a message is sent to it.
+ */
+export type contactsPartialUpdateResponse200 = {
+  data: ContactSuggestion;
+  status: 200;
+};
+
+export type contactsPartialUpdateResponseSuccess =
+  contactsPartialUpdateResponse200 & {
+    headers: Headers;
+  };
+export type contactsPartialUpdateResponse =
+  contactsPartialUpdateResponseSuccess;
+
+export const getContactsPartialUpdateUrl = (id: string) => {
+  return `/api/v1.0/contacts/${id}/`;
+};
+
+export const contactsPartialUpdate = async (
+  id: string,
+  patchedContactSuggestionUpdateRequest: PatchedContactSuggestionUpdateRequest,
+  options?: RequestInit,
+): Promise<contactsPartialUpdateResponse> => {
+  return fetchAPI<contactsPartialUpdateResponse>(
+    getContactsPartialUpdateUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(patchedContactSuggestionUpdateRequest),
+    },
+  );
+};
+
+export const getContactsPartialUpdateMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof contactsPartialUpdate>>,
+    TError,
+    { id: string; data: PatchedContactSuggestionUpdateRequest },
+    TContext
+  >;
+  request?: SecondParameter<typeof fetchAPI>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof contactsPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedContactSuggestionUpdateRequest },
+  TContext
+> => {
+  const mutationKey = ["contactsPartialUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof contactsPartialUpdate>>,
+    { id: string; data: PatchedContactSuggestionUpdateRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return contactsPartialUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ContactsPartialUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof contactsPartialUpdate>>
+>;
+export type ContactsPartialUpdateMutationBody =
+  PatchedContactSuggestionUpdateRequest;
+export type ContactsPartialUpdateMutationError = ErrorType<unknown>;
+
+export const useContactsPartialUpdate = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof contactsPartialUpdate>>,
+      TError,
+      { id: string; data: PatchedContactSuggestionUpdateRequest },
+      TContext
+    >;
+    request?: SecondParameter<typeof fetchAPI>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof contactsPartialUpdate>>,
+  TError,
+  { id: string; data: PatchedContactSuggestionUpdateRequest },
+  TContext
+> => {
+  const mutationOptions = getContactsPartialUpdateMutationOptions(options);
+
+  return useMutation(mutationOptions, queryClient);
+};

@@ -2,7 +2,11 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { triggerHaptic } from "@/features/native/haptics";
+
 import { useLongPress } from "./use-long-press";
+
+vi.mock("@/features/native/haptics", () => ({ triggerHaptic: vi.fn() }));
 
 // Opts this file into React's act() support; without it every render logs
 // "the current testing environment is not configured to support act(...)".
@@ -23,10 +27,10 @@ const onTap = vi.fn();
 const hook: { current: Api | null } = { current: null };
 const api = () => hook.current!;
 
-const Harness = ({ tap }: { tap?: () => void }) => {
+const Harness = ({ tap, haptic = false }: { tap?: () => void; haptic?: boolean }) => {
     const value = useLongPress(onLongPress, {
         delay: 350,
-        haptic: false,
+        haptic,
         moveTolerance: 10,
         onTap: tap,
     });
@@ -36,9 +40,15 @@ const Harness = ({ tap }: { tap?: () => void }) => {
     return null;
 };
 
-const render = (tap?: () => void) =>
+const render = (tap?: () => void, { haptic }: { haptic?: boolean } = {}) =>
     act(() => {
-        root.render(<Harness tap={tap} />);
+        root.render(<Harness tap={tap} haptic={haptic} />);
+    });
+
+/** Pointer event landing on `window`, wherever the finger is by then. */
+const pointer = (type: "pointerup" | "pointercancel") =>
+    act(() => {
+        document.body.dispatchEvent(new Event(type, { bubbles: true }));
     });
 
 /** Element the press lands on; in the document so events reach `window`. */
@@ -84,7 +94,8 @@ const wait = (ms: number) =>
 
 beforeEach(() => {
     vi.useFakeTimers();
-    onLongPress.mockClear();
+    onLongPress.mockReset();
+    vi.mocked(triggerHaptic).mockClear();
     onTap.mockClear();
     preventDefault.mockClear();
     container = document.createElement("div");
@@ -232,6 +243,70 @@ describe("useLongPress", () => {
         it("leaves a right-click alone when no press is in flight", () => {
             expect(contextMenu().defaultPrevented).toBe(false);
             expect(contextMenu(container).defaultPrevented).toBe(false);
+        });
+    });
+
+    describe("touch tracking", () => {
+        it("tells a finger is down until it leaves, the press fired or not", () => {
+            expect(api().isTouching()).toBe(false);
+            touchStart(20, 40);
+            expect(api().isTouching()).toBe(true);
+            wait(350);
+            expect(api().isTouching()).toBe(true);
+            touchEnd();
+            expect(api().isTouching()).toBe(false);
+        });
+
+        it("stops telling it once the press turned into a scroll", () => {
+            touchStart(20, 40);
+            touchMove(20, 80);
+            expect(api().isTouching()).toBe(false);
+        });
+
+        // Android sends no touchend after a long press, only a pointerup.
+        it("ends a fired press on the pointerup Android sends instead of a touchend", () => {
+            touchStart(20, 40);
+            wait(350);
+            pointer("pointerup");
+            expect(api().isTouching()).toBe(false);
+            expect(contextMenu().defaultPrevented).toBe(false);
+        });
+
+        it("leaves a tap to the touchend following its pointerup", () => {
+            touchStart(20, 40);
+            wait(100);
+            pointer("pointerup");
+            expect(api().isTouching()).toBe(true);
+            touchEnd();
+            expect(onTap).toHaveBeenCalledTimes(1);
+            expect(onLongPress).not.toHaveBeenCalled();
+        });
+
+        it("ends the press on a pointercancel", () => {
+            touchStart(20, 40);
+            wait(100);
+            pointer("pointercancel");
+            wait(350);
+            expect(api().isTouching()).toBe(false);
+            expect(onLongPress).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("haptic pulse", () => {
+        it("marks the long press firing", () => {
+            render(onTap, { haptic: true });
+            touchStart(20, 40);
+            wait(350);
+            expect(triggerHaptic).toHaveBeenCalledTimes(1);
+        });
+
+        it("is skipped when the press is declined", () => {
+            render(onTap, { haptic: true });
+            onLongPress.mockReturnValue(false);
+            touchStart(20, 40);
+            wait(350);
+            expect(onLongPress).toHaveBeenCalledTimes(1);
+            expect(triggerHaptic).not.toHaveBeenCalled();
         });
     });
 

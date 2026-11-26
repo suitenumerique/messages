@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import clsx from "clsx"
 import { DateHelper } from "@/features/utils/date-helper"
+import EventHelper from "@/features/utils/event-helper"
 import { Thread } from "@/features/api/gen/models"
 import { ThreadItemSenders } from "./thread-item-senders"
 import { Badge } from "@/features/ui/components/badge"
@@ -228,15 +229,8 @@ export const ThreadItem = ({ thread, isSelected, onToggle, onSelectRange, select
             e.dataTransfer.setData('text/thread-editable', '');
         }
 
-        // Hide native drag image by using an offscreen empty element as drag image
-        // (Safari-compatible — `new Image()` with an inline data URL is unreliable
-        // because Safari requires the image to be loaded/in the DOM).
         // The ThreadDragPreview portal follows the cursor instead.
-        const ghost = document.createElement('div');
-        ghost.style.cssText = 'position:absolute;top:-1000px;left:-1000px;width:1px;height:1px;';
-        document.body.appendChild(ghost);
-        e.dataTransfer.setDragImage(ghost, 0, 0);
-        setTimeout(() => document.body.removeChild(ghost), 0);
+        EventHelper.hideNativeDragImage(e.dataTransfer);
     }
     const handleDragEnd = () => {
         setIsDragging(false);

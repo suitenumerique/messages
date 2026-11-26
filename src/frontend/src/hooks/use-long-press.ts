@@ -29,6 +29,12 @@ type UseLongPressResult = {
   /** True while the finger is down and the long-press timer is still running. */
   pressing: boolean;
   /**
+   * True from the touch start until the finger leaves the screen, the long
+   * press fired or not, unless the press turned into a scroll. Read
+   * synchronously, by code reacting to events within the gesture.
+   */
+  isTouching: () => boolean;
+  /**
    * True when a click firing right now is the tail of a touch the hook already
    * resolved. Only useful next to an `onTap`, as a fallback for the browsers
    * that emit the compatibility click despite the `preventDefault`.
@@ -47,9 +53,12 @@ const COMPATIBILITY_CLICK_WINDOW_MS = 700;
  * can anchor a context menu where the finger landed. Touch coordinates are
  * captured on `touchstart` (the synthetic event is not retained) and a release
  * or a move beyond the tolerance before the delay cancels the gesture.
+ * `onLongPress` returns `false` to decline the press, which then gets no
+ * haptic pulse: for a caller arming the hook on items that have nothing to
+ * offer on a long press.
  */
 export const useLongPress = (
-  onLongPress: (position: LongPressPosition) => void,
+  onLongPress: (position: LongPressPosition) => void | false,
   {
     delay = 500,
     haptic = true,
@@ -99,6 +108,24 @@ export const useLongPress = (
     };
   }, []);
 
+  // Android sends no `touchend` after a long press, only a `pointerup` on
+  // whatever lies under the finger by then (seen on a Pixel and a Huawei P30
+  // Pro). Without it the press stayed in flight until the next one, swallowing
+  // every `contextmenu` meanwhile, a mouse right-click included. A `pointerup`
+  // ends only a press that already fired: a tap is decided by the `touchend`
+  // following it. A `pointercancel` always ends the press.
+  useEffect(() => {
+    const endFiredPress = () => {
+      if (origin.current && !timer.current) cancel();
+    };
+    window.addEventListener("pointerup", endFiredPress, true);
+    window.addEventListener("pointercancel", cancel, true);
+    return () => {
+      window.removeEventListener("pointerup", endFiredPress, true);
+      window.removeEventListener("pointercancel", cancel, true);
+    };
+  }, [cancel]);
+
   const start = useCallback(
     (event: React.TouchEvent) => {
       cancel();
@@ -115,8 +142,8 @@ export const useLongPress = (
         timer.current = null;
         fired.current = true;
         setPressing(false);
-        if (haptic) triggerHaptic();
-        onLongPress(position);
+        const accepted = onLongPress(position) !== false;
+        if (haptic && accepted) triggerHaptic();
       }, delay);
     },
     [cancel, delay, haptic, onLongPress],
@@ -159,6 +186,8 @@ export const useLongPress = (
     [],
   );
 
+  const isTouching = useCallback(() => origin.current !== null, []);
+
   return {
     handlers: {
       onTouchStart: start,
@@ -167,6 +196,7 @@ export const useLongPress = (
       onTouchCancel: cancel,
     },
     pressing,
+    isTouching,
     isTouchHandled,
   };
 };

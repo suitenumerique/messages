@@ -19,6 +19,31 @@ class EventHelper {
             event.preventDefault();
         }
     }
+
+    /**
+     * Tells whether the user is on an Apple device, whose keyboards mostly
+     * lack a forward delete key: their ⌫ key raises `Backspace`. iPadOS
+     * presents itself as a Mac.
+     * @returns true on macOS, iOS and iPadOS.
+     */
+    static isApplePlatform(): boolean {
+        return /Macintosh|Mac OS X|iPhone|iPad|iPod/.test(navigator.userAgent);
+    }
+
+    /**
+     * Hides the image a browser draws under the cursor during a drag, for a
+     * preview of the page to follow the cursor instead. Safari drew nothing
+     * of a copy of the dragged element built on the drag start, and takes an
+     * image only once loaded: an empty element in the page works everywhere.
+     * @param dataTransfer - the `dataTransfer` of the `dragstart` event.
+     */
+    static hideNativeDragImage(dataTransfer: DataTransfer) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'position:absolute;top:-1000px;left:-1000px;width:1px;height:1px;';
+        document.body.appendChild(empty);
+        dataTransfer.setDragImage(empty, 0, 0);
+        setTimeout(() => empty.remove(), 0);
+    }
 }
 
 export default EventHelper;

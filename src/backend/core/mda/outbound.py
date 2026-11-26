@@ -522,6 +522,12 @@ def _finalize_sent_message(
         mailbox=mailbox_sender,
     ).update(read_at=message.created_at)
 
+    # There is no contact management screen yet, so writing to a hidden contact
+    # is the only way to get it back in the suggestions.
+    models.Contact.objects.filter(messages__message=message, is_suggested=False).update(
+        is_suggested=True
+    )
+
     message.thread.update_stats(source_message=message)
 
 

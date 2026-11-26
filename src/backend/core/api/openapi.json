@@ -498,7 +498,7 @@
         "/api/v1.0/contacts/": {
             "get": {
                 "operationId": "contacts_list",
-                "description": "List contacts with optional filtering by mailbox and search query.\nFor a mailbox, it returns all contacts in the mailbox and all contacts\nin the same domain as the mailbox.\n\nQuery parameters:\n- mailbox_id: Optional UUID to filter contacts by mailbox\n- q: Optional search query for name or email (case insensitive)",
+                "description": "List contacts with optional filtering by mailbox and search query.\nFor a mailbox, it returns the contacts the mailbox sent a message to\nand all contacts in the same domain as the mailbox. The contacts hidden\nfrom the suggestions come with ``is_suggested`` false, so that a search\ncan still find them.\n\nQuery parameters:\n- mailbox_id: Optional UUID to filter contacts by mailbox\n- q: Optional search query for name or email (case insensitive)",
                 "parameters": [
                     {
                         "in": "query",
@@ -533,7 +533,7 @@
                                 "schema": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/components/schemas/Contact"
+                                        "$ref": "#/components/schemas/ContactSuggestion"
                                     }
                                 }
                             }
@@ -571,6 +571,54 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Contact"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "contacts_partial_update",
+                "description": "Hide a contact from the recipient suggestions of its mailbox, or show\nit again. Requires an editor role or above on that mailbox.\n\nHiding stands for every user of the mailbox, and a contact cannot be\ndeleted instead as the messages it sent or received reference it. It\nis suggested again once a message is sent to it.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "contacts"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedContactSuggestionUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PatchedContactSuggestionUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ContactSuggestion"
                                 }
                             }
                         },
@@ -8384,6 +8432,44 @@
                     "id"
                 ]
             },
+            "ContactSuggestion": {
+                "type": "object",
+                "description": "Serialize a contact offered as a recipient suggestion.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "readOnly": true,
+                        "description": "primary key for the record as UUID"
+                    },
+                    "name": {
+                        "type": "string",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "email": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "is_suggested": {
+                        "type": "boolean",
+                        "description": "Tell whether the contact is suggested to the selected mailbox.\n\nA contact listed through the domain of the selected mailbox belongs to\nanother mailbox: whether that one hid it does not matter here.",
+                        "readOnly": true
+                    },
+                    "can_change_suggestion": {
+                        "type": "boolean",
+                        "description": "Tell whether the current user can hide or show this suggestion.",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "can_change_suggestion",
+                    "email",
+                    "id",
+                    "is_suggested",
+                    "name"
+                ]
+            },
             "DNSCheckResponse": {
                 "type": "object",
                 "properties": {
@@ -10756,6 +10842,15 @@
                     },
                     "settings": {
                         "description": "Channel-specific configuration settings"
+                    }
+                }
+            },
+            "PatchedContactSuggestionUpdateRequest": {
+                "type": "object",
+                "description": "Validate and apply a change to whether a contact is suggested.",
+                "properties": {
+                    "is_suggested": {
+                        "type": "boolean"
                     }
                 }
             },
