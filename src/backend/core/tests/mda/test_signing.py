@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from dkim import sign as dkim_sign
 from dkim import verify as dkim_verify
 
 from core.enums import DKIMAlgorithmChoices
@@ -110,6 +111,36 @@ def test_verify_message_dkim_returns_signing_domain():
     answer.strings = [f"v=DKIM1; k=rsa; p={public_key_str}".encode()]
     with patch("core.mda.signing.dns.resolver.resolve", return_value=[answer]):
         assert verify_message_dkim(full_message_signed) == "example.com"
+
+
+def test_verify_message_dkim_rejects_a_body_length_tag():
+    """A signature with l= does not prove the parts after the signed bytes."""
+    private_key, public_key = generate_dkim_key(key_size=1024)
+    signed = (
+        b"From: test@example.com\r\nTo: recipient@other.com\r\n"
+        b"Subject: Hello\r\nContent-Type: text/plain\r\n\r\nHello\r\n"
+    )
+    signature = dkim_sign(
+        signed,
+        b"testselector",
+        b"example.com",
+        private_key.encode(),
+        include_headers=[b"from", b"to", b"subject"],
+        length=True,
+    )
+    # Content-Type is not signed, so a third party can change it.
+    forged = signed.replace(
+        b"Content-Type: text/plain",
+        b'Content-Type: multipart/mixed; boundary="added"',
+    ) + (
+        b"--added\r\nContent-Type: text/calendar\r\n\r\n"
+        b"BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n--added--\r\n"
+    )
+
+    answer = Mock()
+    answer.strings = [f"v=DKIM1; k=rsa; p={public_key}".encode()]
+    with patch("core.mda.signing.dns.resolver.resolve", return_value=[answer]):
+        assert verify_message_dkim(signature + forged) is None
 
 
 @pytest.mark.django_db
