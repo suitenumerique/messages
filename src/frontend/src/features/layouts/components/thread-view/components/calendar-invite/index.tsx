@@ -656,7 +656,12 @@ const fetchAndParseCalendar = async (url: string): Promise<IcsCalendar> => {
         throw new Error(`HTTP error: ${response.status}`);
     }
     const icsContent = await response.text();
-    return convertIcsCalendar(undefined, icsContent);
+    // Property names are case-insensitive (RFC 5545), but ts-ics only reads
+    // upper-case names. Without this, a "method:REPLY" line gives no method.
+    return convertIcsCalendar(
+        undefined,
+        icsContent.replace(/^method(?=[:;])/im, "METHOD"),
+    );
 };
 
 const fetchIcsContent = async (url: string): Promise<string> => {
