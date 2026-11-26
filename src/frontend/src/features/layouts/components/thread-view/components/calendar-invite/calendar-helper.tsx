@@ -120,8 +120,14 @@ export function formatEventDateRange(
     if (allDay) {
         const startDate = dateFormatter.format(start);
         if (!end) return startDate;
-        // All-day events: end date is exclusive in ICS (next day at midnight)
-        const adjustedEnd = new Date(end.getTime() - 86400000);
+        // The ICS end date is exclusive. Subtract one calendar day, not 24 hours,
+        // because a day is 23 hours long across a DST change.
+        const adjustedEnd = new Date(end);
+        if (end.getHours() === 0) {
+            adjustedEnd.setDate(adjustedEnd.getDate() - 1);
+        } else {
+            adjustedEnd.setUTCDate(adjustedEnd.getUTCDate() - 1);
+        }
         if (start.toDateString() === adjustedEnd.toDateString()) {
             return startDate; // Single all-day event
         }

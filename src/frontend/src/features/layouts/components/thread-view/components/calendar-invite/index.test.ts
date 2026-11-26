@@ -178,6 +178,20 @@ describe("formatEventDateRange", () => {
         expect(result).toContain("–");
     });
 
+    it("should keep a one-day all-day event on its day across a DST change", () => {
+        const previousTz = process.env.TZ;
+        process.env.TZ = "Europe/Paris";
+        try {
+            const start = new Date(2027, 2, 28);
+            const end = new Date(2027, 2, 29);
+            const result = formatEventDateRange(start, end, "en-US");
+            expect(result).toContain("March 28");
+            expect(result).not.toContain("–");
+        } finally {
+            process.env.TZ = previousTz;
+        }
+    });
+
     it("should format same-day timed event with time range", () => {
         const start = new Date("2025-06-15T10:00:00");
         const end = new Date("2025-06-15T11:30:00");
