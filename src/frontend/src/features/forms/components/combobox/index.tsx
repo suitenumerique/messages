@@ -8,18 +8,38 @@ import { Icon } from "@/features/ui/components/icon";
 import { useTranslation } from "react-i18next";
 import { Popover } from "react-aria-components";
 import { ComboBoxOptionAction, useOptionActions } from "./use-option-actions";
+import { isEmulatedChipDrag, useChipTouchDrag } from "./use-chip-touch-drag";
+import { CHIP_DRAGGING_CLASS, followMouseChipDrag } from "./chip-drag-preview";
 
 export type { ComboBoxOptionAction } from "./use-option-actions";
 
 // react-aria lowers it to the room left on the side the menu opens to.
 const MENU_MAX_HEIGHT = 320;
 
+const chipDragType = (group: string) => `application/x-combobox-chip-${group}`;
+
+/** Where a dragged chip would land: its index, and the caret's box. */
+type ChipDropSpot = { index: number, left: number, top: number, height: number };
+
+/**
+ * The chip being dragged in this page, if any. The dragged value can only be
+ * read on drop: this tells a field beforehand that the chip comes from
+ * itself, to be reordered there, and tells the source on `dragend` that
+ * another field took the chip. The drop effect cannot tell the latter: an
+ * editor accepts any drag, so a chip dropped in the message body would read
+ * as moved.
+ */
+let draggedChip: { sourceId: string, value: string, dropped: boolean } | null = null;
+
+/** Tells whether a drag, React's or the DOM's, carries a chip of `group`. */
+export const isComboBoxChipDrag = (event: { dataTransfer: DataTransfer | null }, group: string) =>
+    !!event.dataTransfer?.types.includes(chipDragType(group));
+
 export type ComboBoxProps =  {
     onInputChange?: (value: string) => void;
     value?: string[],
     defaultValue?: string[],
     onChange?: (value: string[]) => void,
-    renderChipLabel?: (item: Option) => string,
     valueValidator?: (value: string) => boolean,
     /**
      * Canonicalizes a value on its way in, from any source: typed, pasted,
@@ -46,6 +66,13 @@ export type ComboBoxProps =  {
      */
     fallbackSection?: { title: string, options: Option[] },
     /**
+     * Lets the chips be dragged with a mouse, to reorder them, or into
+     * another combobox of the same group, which moves them there, also when
+     * it belongs to another form of the page. From another browser window,
+     * the chip is copied: that window cannot learn of the drop.
+     */
+    dragGroup?: string,
+    /**
      * "floating" (default) animates the label above the value, like the
      * ui-kit Select. "inline" puts the label in a left column and the field
      * in a right column, on the same grid as the ui-kit inline fields.
@@ -67,8 +94,13 @@ export const ComboBox = (props: ComboBoxProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     // `className` is merged into the root classes below instead of being
     // spread, otherwise a caller-provided value would replace `c__combobox`.
-    const { valueTransformer, getItemWarning, getOptionAction, fallbackSection, className, variant = "floating", actions, ...fieldProps } = props;
+    const { valueTransformer, getItemWarning, getOptionAction, fallbackSection, dragGroup, className, variant = "floating", actions, ...fieldProps } = props;
     const fallbackSectionTitleId = useId();
+    const comboboxId = useId();
+    const chipPointerTypeRef = useRef("");
+    const valueRowRef = useRef<HTMLDivElement>(null);
+    // Where a chip dragged over the field would land, shown by a caret.
+    const [chipDropSpot, setChipDropSpot] = useState<ChipDropSpot | null>(null);
     const inline = variant === "inline";
     const canonical = useCallback(
         (value: string): string => (valueTransformer ? valueTransformer(value) : value),
@@ -81,10 +113,10 @@ export const ComboBox = (props: ComboBoxProps) => {
     /**
      * Keep one option per canonical value, first occurrence wins.
      *
-     * Two entries that differ only by what the transformer folds (domain
-     * case, say) become the same address once transformed, so without this
-     * a restored draft renders duplicate chips and `onChange` submits the
-     * same recipient twice.
+     * Two entries that differ only by what the transformer folds (case, say)
+     * become the same value once transformed, so without this a restored
+     * value renders duplicate chips and `onChange` reports the same value
+     * twice.
      */
     const dedupe = useCallback((options: Option[]): Option[] => {
         const seen = new Set<string>();
@@ -122,10 +154,10 @@ export const ComboBox = (props: ComboBoxProps) => {
         },
     })
     const withoutSelected = useCallback((options: Option[]): Option[] => {
-        // Compare on the transformed value: a stored contact whose address
-        // differs only by what the transformer canonicalizes (e.g. domain
-        // case) would otherwise stay offered after being picked, and could be
-        // added a second time.
+        // Compare on the transformed value: an option whose value differs
+        // only by what the transformer canonicalizes (e.g. case) would
+        // otherwise stay offered after being picked, and could be added a
+        // second time.
         const selected = new Set(selectedItems.map(item => item.value || item.label));
         return options.filter(option => {
             const raw = option.value ?? option.label;
@@ -172,6 +204,10 @@ export const ComboBox = (props: ComboBoxProps) => {
         inputRef,
         openMenu: () => openMenu(),
     });
+    const chipTouchDrag = useChipTouchDrag({ enabled: !!dragGroup && !props.disabled });
+    // Android takes the focus away from the input on its own long press, on
+    // a chip as on an option.
+    const ignoresInputBlur = () => optionActions.ignoresInputBlur() || chipTouchDrag.isTouchingChip();
 
     const {
         getInputProps,
@@ -188,15 +224,15 @@ export const ComboBox = (props: ComboBoxProps) => {
             items: menuItems,
             itemToString: (item) => item?.label || item?.value || '',
             stateReducer: (state, { type, changes }) => {
-                if (type === useCombobox.stateChangeTypes.InputBlur && optionActions.ignoresInputBlur()) {
+                if (type === useCombobox.stateChangeTypes.InputBlur && ignoresInputBlur()) {
                     return state;
                 }
                 return changes;
             },
             onSelectedItemChange: ({ selectedItem }) => {
                 if (!selectedItem) return;
-                // Menu entries come from stored contacts, which keep the case
-                // they were received in; canonicalize them like typed input.
+                // An option may carry a value the transformer would change
+                // (e.g. its case): canonicalize it like typed input.
                 addSelectedItem(toOption(selectedItem.value || selectedItem.label));
                 setInputValue('');
             },
@@ -222,7 +258,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                 size: 4,
                 value: inputValue,
                 onBlurCapture: () => {
-                    if (!optionActions.ignoresInputBlur()) extractNewItemsIfNeeded();
+                    if (!ignoresInputBlur()) extractNewItemsIfNeeded();
                 },
                 onChange: (e) => {
                     // Synchronously update the input value
@@ -289,6 +325,119 @@ export const ComboBox = (props: ComboBoxProps) => {
         if (props.autoFocus) inputRef.current?.focus();
     }, [props.autoFocus]);
 
+    const acceptsChipDrop = (event: React.DragEvent) =>
+        !!dragGroup
+        && !props.disabled
+        && isComboBoxChipDrag(event, dragGroup);
+    /** The index of the dragged chip, when it comes from this field. */
+    const ownDraggedChipIndex = () => (
+        draggedChip?.sourceId === comboboxId
+            ? selectedItems.findIndex((item) => (item.value || item.label) === draggedChip?.value)
+            : -1
+    );
+    /**
+     * Where a chip dropped at the pointer would land: before the first chip
+     * the pointer is before, on its line or above it, else after the last
+     * one. The caret sits halfway in the gap, positioned rather than laid
+     * out: it would otherwise push the chips around, and the spot with them.
+     */
+    const locateChipDrop = (event: React.DragEvent): ChipDropSpot | null => {
+        const row = valueRowRef.current;
+        if (!row) return null;
+        const rowRect = row.getBoundingClientRect();
+        const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+        const chips = Array.from(row.querySelectorAll(".c__combobox__chip"));
+        for (let index = 0; index < chips.length; index++) {
+            const rect = chips[index].getBoundingClientRect();
+            const isAboveLine = event.clientY < rect.top;
+            const isBeforeMiddle = event.clientY <= rect.bottom && event.clientX < rect.left + rect.width / 2;
+            if (isAboveLine || isBeforeMiddle) {
+                return { index, left: rect.left - rowRect.left - gap / 2, top: rect.top - rowRect.top, height: rect.height };
+            }
+        }
+        const last = chips.at(-1)?.getBoundingClientRect();
+        if (last) {
+            return { index: chips.length, left: last.right - rowRect.left + gap / 2, top: last.top - rowRect.top, height: last.height };
+        }
+        const input = inputRef.current?.getBoundingClientRect();
+        return { index: 0, left: (input?.left ?? rowRect.left) - rowRect.left, top: (input?.top ?? rowRect.top) - rowRect.top, height: input?.height ?? rowRect.height };
+    };
+    const chipDropHandlers = dragGroup ? {
+        onDragOver: (event: React.DragEvent) => {
+            if (!acceptsChipDrop(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            const located = locateChipDrop(event);
+            // Right before or after the dragged chip itself, nothing moves.
+            const from = ownDraggedChipIndex();
+            const spot = located && from >= 0 && (located.index === from || located.index === from + 1)
+                ? null
+                : located;
+            // Fired continuously while hovering: only a new spot re-renders.
+            setChipDropSpot((current) => (
+                current && spot && current.index === spot.index && current.left === spot.left && current.top === spot.top
+                    ? current
+                    : spot
+            ));
+        },
+        onDragLeave: (event: React.DragEvent) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setChipDropSpot(null);
+            }
+        },
+        onDrop: (event: React.DragEvent) => {
+            setChipDropSpot(null);
+            if (!acceptsChipDrop(event)) return;
+            event.preventDefault();
+            const value = event.dataTransfer.getData(chipDragType(dragGroup));
+            if (!value) return;
+            const index = locateChipDrop(event)?.index ?? selectedItems.length;
+            const next = [...selectedItems];
+            const from = ownDraggedChipIndex();
+            if (from >= 0) {
+                // Reordered within this field: the source keeps it.
+                const to = index > from ? index - 1 : index;
+                if (to === from) return;
+                const [moved] = next.splice(from, 1);
+                next.splice(to, 0, moved);
+                setSelectedItems(next);
+                return;
+            }
+            if (draggedChip) draggedChip.dropped = true;
+            next.splice(index, 0, toOption(value));
+            setSelectedItems(dedupe(next));
+        },
+    } : {};
+    const getChipDragProps = (item: Option) => (dragGroup && !props.disabled ? {
+        draggable: true,
+        onPointerDown: (event: React.PointerEvent) => {
+            chipPointerTypeRef.current = event.pointerType;
+        },
+        onDragStart: (event: React.DragEvent) => {
+            // A browser starts its own touch drag on the hold alone, unevenly
+            // across browsers: a finger goes through the drag emulated after
+            // a long press instead (see useChipTouchDrag).
+            if (chipPointerTypeRef.current === "touch" && !isEmulatedChipDrag(event.nativeEvent)) {
+                event.preventDefault();
+                return;
+            }
+            const value = item.value || item.label;
+            event.dataTransfer.setData(chipDragType(dragGroup), value);
+            event.dataTransfer.effectAllowed = "move";
+            draggedChip = { sourceId: comboboxId, value, dropped: false };
+            const chip = event.currentTarget;
+            // A finger's drag moves its copy itself (see useChipTouchDrag).
+            if (!isEmulatedChipDrag(event.nativeEvent)) followMouseChipDrag(chip, event.nativeEvent);
+            chip.classList.add(CHIP_DRAGGING_CLASS);
+        },
+        onDragEnd: (event: React.DragEvent) => {
+            event.currentTarget.classList.remove(CHIP_DRAGGING_CLASS);
+            const moved = draggedChip?.dropped ?? false;
+            draggedChip = null;
+            if (moved) removeSelectedItem(item);
+        },
+    } : {});
+
     const labelProps = getLabelProps();
     const renderMenuItem = (item: Option, index: number) => {
         const { itemProps: actionItemProps, button: actionButton } = optionActions.getOptionActionProps(item, index);
@@ -309,7 +458,14 @@ export const ComboBox = (props: ComboBoxProps) => {
         );
     };
     const valueRow = (
-        <div className="c__combobox__value">
+        <div className="c__combobox__value" ref={valueRowRef} {...chipTouchDrag.chipTouchHandlers}>
+            {chipDropSpot && (
+                <span
+                    className="c__combobox__drop-caret"
+                    aria-hidden="true"
+                    style={{ left: chipDropSpot.left, top: chipDropSpot.top, height: chipDropSpot.height }}
+                />
+            )}
             {selectedItems.map((selectedItem, index) => (
                 <input
                     key={`input-${selectedItems.length}-${index}`}
@@ -324,6 +480,7 @@ export const ComboBox = (props: ComboBoxProps) => {
                         selectedItem: item,
                         index,
                     })}
+                    {...getChipDragProps(item)}
                     key={`chip-${selectedItems.length}-${index}`}
                     label={item.label}
                     warning={getItemWarning?.(item.value || item.label)}
@@ -380,7 +537,7 @@ export const ComboBox = (props: ComboBoxProps) => {
             )}
             <div className="c__combobox__wrapper" ref={wrapperRef} onClick={() => {
                 inputRef.current?.focus();
-            }}>
+            }} {...chipDropHandlers}>
                 {inline ? (
                     <>
                         {valueRow}

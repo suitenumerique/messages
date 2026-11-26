@@ -1,5 +1,3 @@
-@use "../../../../styles/utils" as *;
-
 .c__combobox {
   position: relative;
 
@@ -177,8 +175,13 @@
     color: var(--c--components--forms-select--item-color);
     cursor: pointer;
     // A long press opens the option's context menu: not the browser's own
-    // callout or a text selection.
-    @include no-touch-link-menu;
+    // callout or a text selection, as soon as a touch screen is there.
+    @media (any-pointer: coarse) {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
 
     &__action {
       flex-shrink: 0;
@@ -235,6 +238,8 @@
 }
 
 .c__combobox__value {
+  // Anchors the drop caret.
+  position: relative;
   color: var(--c--components--forms-select--value-color);
   display: flex;
   flex-wrap: wrap;
@@ -242,6 +247,16 @@
   align-items: center;
   margin-bottom: 0.4rem;
   width: 100%;
+}
+
+// Where a dragged chip would land.
+.c__combobox__drop-caret {
+  position: absolute;
+  width: 2px;
+  transform: translateX(-1px);
+  border-radius: 1px;
+  background-color: var(--c--contextuals--border--semantic--brand--primary);
+  pointer-events: none;
 }
 
 .c__combobox__chip {
@@ -257,6 +272,42 @@
   max-width: 100%;
   font-size: var(--c--globals--font--sizes--sm);
   vertical-align: middle;
+  transition:
+    scale 0.1s ease-out,
+    background-color 0.1s ease-out,
+    color 0.1s ease-out;
+
+  // Movable within its field or to another of its group.
+  &[draggable="true"] {
+    cursor: grab;
+
+    // A long press starts the drag (see useChipTouchDrag): not the browser's
+    // own callout, text selection, scroll, or touch drag.
+    @media (any-pointer: coarse) {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: none;
+    }
+
+    // Only where no mouse can start a drag of its own.
+    @media (hover: none) {
+      -webkit-user-drag: none;
+    }
+  }
+
+  &--dragging {
+    opacity: 0.4;
+  }
+
+  // Shrinks while held, until a long press lifts it.
+  &--pressing {
+    scale: 0.94;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
 
   &__label {
     min-width: 0;
@@ -288,12 +339,54 @@
     color: var(--c--contextuals--content--semantic--warning--primary);
   }
 
+  // Held, lifted or reached with the keyboard: in the brand colour, over a
+  // warning's too.
+  &--pressing,
+  &--lifted,
+  &:focus-visible {
+    background-color: var(--c--contextuals--background--semantic--brand--primary);
+    color: var(--c--contextuals--content--semantic--brand--on-brand);
+
+    .c__combobox__chip__clear.c__button {
+      color: inherit;
+    }
+  }
+
   // Tooltip anchor around a warned chip: takes the chip's place in the
   // wrapping value row without changing its layout.
   &__tooltip-anchor {
     display: inline-flex;
     max-width: 100%;
     min-width: 0;
+  }
+}
+
+// The copy of a dragged chip following the pointer (see createChipDragGhost),
+// above the popovers react-aria raises to a z-index of 100000. Lifted, so
+// coloured by the chip rules.
+.c__combobox__chip-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100001;
+  pointer-events: none;
+  // As much room on both sides, its remove button left behind.
+  padding-inline-end: var(--c--globals--spacings--xs);
+  // Moved by the compositor alone, without repainting it.
+  will-change: translate;
+  // Grows as it lifts, from the size a pressed chip shrinks to, while
+  // `translate` follows the pointer, unscaled.
+  scale: 1.06;
+  animation: c__combobox__chip-lift 0.15s ease-out;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes c__combobox__chip-lift {
+  from {
+    scale: 0.94;
   }
 }
 

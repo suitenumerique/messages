@@ -69,4 +69,23 @@ describe('EventHelper', () => {
             expect(EventHelper.isApplePlatform()).toBe(expected);
         });
     });
+
+    describe('hideNativeDragImage', () => {
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('should give an empty element of the page as the drag image, then remove it', () => {
+            vi.useFakeTimers();
+            const setDragImage = vi.fn<(image: Element, x: number, y: number) => void>();
+
+            EventHelper.hideNativeDragImage({ setDragImage } as unknown as DataTransfer);
+
+            const [image] = setDragImage.mock.calls[0];
+            expect(image.isConnected).toBe(true);
+            expect(image.childNodes).toHaveLength(0);
+            vi.runAllTimers();
+            expect(image.isConnected).toBe(false);
+        });
+    });
 });

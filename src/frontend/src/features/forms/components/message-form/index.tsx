@@ -21,6 +21,7 @@ import { useDropzone } from "react-dropzone";
 import { AttachmentBucket, AttachmentUploader } from "./attachment-uploader";
 import { DropZone } from "./dropzone";
 import { RhfContactComboBox } from "../react-hook-form/rhf-contact-combobox";
+import { isComboBoxChipDrag } from "../combobox";
 import useAbility, { Abilities } from "@/hooks/use-ability";
 import i18n from "@/features/i18n/initI18n";
 import { DropdownButton } from "@/features/ui/components/dropdown-button";
@@ -133,6 +134,9 @@ export type MessageFormHandle = {
 };
 
 const DRAFT_TOAST_ID = "MESSAGE_FORM_DRAFT_TOAST";
+// Shared by the recipient fields of every composer: a recipient can be
+// dragged from one field to another, also of another composer.
+const RECIPIENTS_DRAG_GROUP = "recipients";
 
 export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
     parentMessage,
@@ -337,6 +341,10 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         shouldFocusError: false,
         defaultValues: formDefaultValues,
     });
+
+    // The hidden "cc" and "bcc" fields a recipient drag opened, to close
+    // again if left empty.
+    const revealedByChipDragRef = useRef(new Set<"cc" | "bcc">());
 
     const currentToRecipients = useWatch({
         control: form.control,
@@ -1095,6 +1103,43 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
         }
     }, [showBCCField])
 
+    // A recipient drag, from this composer or another, opens the hidden
+    // "cc" and "bcc" fields to be dropped in. A frame later, as Chrome
+    // cancels a drag whose start changes the page around it.
+    useEffect(() => {
+        if (!canWriteMessages) return;
+        const onDragStart = (event: DragEvent) => {
+            if (!isComboBoxChipDrag(event, RECIPIENTS_DRAG_GROUP)) return;
+            const revealed = revealedByChipDragRef.current;
+            if (!showCCField) revealed.add("cc");
+            if (!showBCCField) revealed.add("bcc");
+            requestAnimationFrame(() => {
+                if (revealed.has("cc")) setShowCCField(true);
+                if (revealed.has("bcc")) setShowBCCField(true);
+            });
+        };
+        document.addEventListener("dragstart", onDragStart);
+        return () => document.removeEventListener("dragstart", onDragStart);
+    }, [canWriteMessages, showCCField, showBCCField]);
+
+    // A field the drag opened closes again once it ends, if left empty: after
+    // the field the chip landed in reported its new value.
+    useEffect(() => {
+        const onDragEnd = () => {
+            const revealed = Array.from(revealedByChipDragRef.current);
+            revealedByChipDragRef.current.clear();
+            if (revealed.length === 0) return;
+            setTimeout(() => {
+                revealed.forEach((field) => {
+                    if ((form.getValues(field) ?? []).length > 0) return;
+                    (field === "cc" ? setShowCCField : setShowBCCField)(false);
+                });
+            });
+        };
+        document.addEventListener("dragend", onDragEnd);
+        return () => document.removeEventListener("dragend", onDragEnd);
+    }, [form]);
+
     useEffect(() => {
         localStorage.setItem(PREFER_SEND_MODE_KEY, preferredSendMode);
     }, [preferredSendMode])
@@ -1177,6 +1222,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                 <div className="form-field-row">
                     <RhfContactComboBox
                         name="to"
+                        dragGroup={RECIPIENTS_DRAG_GROUP}
                         label={t("To")}
                         variant="inline"
                         autoFocus={mode === "forward"}
@@ -1201,6 +1247,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="cc"
+                            dragGroup={RECIPIENTS_DRAG_GROUP}
                             label={t("Cc")}
                             variant="inline"
                             text={form.formState.errors.cc && !Array.isArray(form.formState.errors.cc) ? t(form.formState.errors.cc.message as string) : undefined}
@@ -1219,6 +1266,7 @@ export const MessageForm = forwardRef<MessageFormHandle, MessageFormProps>(({
                     <div className="form-field-row">
                         <RhfContactComboBox
                             name="bcc"
+                            dragGroup={RECIPIENTS_DRAG_GROUP}
                             label={t("Bcc")}
                             variant="inline"
                             text={form.formState.errors.bcc && !Array.isArray(form.formState.errors.bcc) ? t(form.formState.errors.bcc.message as string) : undefined}
