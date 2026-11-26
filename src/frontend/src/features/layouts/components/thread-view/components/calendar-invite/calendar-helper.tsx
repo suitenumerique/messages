@@ -5,6 +5,7 @@ import {
     IcsRecurrenceRule,
 } from "ts-ics";
 import { Contact } from "@/features/api/gen/models";
+import MailHelper from "@/features/utils/mail-helper";
 
 /**
  * Convert an ICS duration to milliseconds
@@ -67,6 +68,22 @@ export function collapseRecurringEvents(events: IcsEvent[]): IcsEvent[] {
 }
 
 export { TextHelper } from "@/features/utils/text-helper";
+
+/**
+ * Return the guest who proposes a new time in an iTIP COUNTER.
+ *
+ * The proposer is the only attendee who is not the organizer. When the
+ * message lists several guests, the proposer is unknown.
+ */
+export function findCounterProposer(event: IcsEvent): IcsAttendee | undefined {
+    const organizer = event.organizer?.email
+        ? MailHelper.asciiLower(event.organizer.email)
+        : undefined;
+    const guests = (event.attendees ?? []).filter(
+        (a) => a.email && MailHelper.asciiLower(a.email) !== organizer,
+    );
+    return guests.length === 1 ? guests[0] : undefined;
+}
 
 /**
  * Detect all-day events by checking if start/end are both at midnight.

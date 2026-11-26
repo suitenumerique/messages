@@ -33,6 +33,7 @@ import {
 } from "./calendar-helper";
 import { cleanEventForDisplay } from "./event-display";
 import { CalendarSelect } from "./calendar-select";
+import { CounterSchedule } from "./counter-schedule";
 
 type CalendarInviteProps = {
     attachment: Attachment;
@@ -375,11 +376,14 @@ const EventCard = ({
     language,
     conflicts,
     headerRight,
+    schedule,
 }: {
     event: IcsEvent;
     language: string;
     conflicts: ConflictInfo[];
     headerRight?: ReactNode;
+    // Replaces the date and time row of the event.
+    schedule?: ReactNode;
 }) => {
     const { t } = useTranslation();
     const [showAllAttendees, setShowAllAttendees] = useState(false);
@@ -469,7 +473,7 @@ const EventCard = ({
 
             <div className="calendar-invite__details">
                 {/* Date and Time */}
-                {eventStart && (
+                {schedule ?? (eventStart && (
                     <div className="calendar-invite__detail-row">
                         <Icon
                             name="schedule"
@@ -484,7 +488,7 @@ const EventCard = ({
                             )}
                         </span>
                     </div>
-                )}
+                ))}
 
                 {/* Recurrence */}
                 {event.recurrenceRule && (
@@ -890,7 +894,8 @@ export const CalendarInvite = ({
                     }),
                 },
             ),
-        enabled: !!mailboxId && hasCalDAV && !!eventStart && !!eventEnd,
+        // A proposal holds the proposed time, not the time of the event.
+        enabled: !!mailboxId && hasCalDAV && !!eventStart && !!eventEnd && !isCounter,
         meta: { noGlobalError: true },
     });
 
@@ -1270,6 +1275,17 @@ export const CalendarInvite = ({
                     language={language}
                     conflicts={index === 0 ? conflicts : []}
                     headerRight={index === 0 ? headerRight : null}
+                    schedule={
+                        isCounter && index === 0 ? (
+                            <CounterSchedule
+                                event={event}
+                                language={language}
+                                mailboxId={mailboxId}
+                                icsContent={hasCalDAV ? icsContent : undefined}
+                                isWaiting={isCalendarsPending}
+                            />
+                        ) : undefined
+                    }
                 />
             ))}
 

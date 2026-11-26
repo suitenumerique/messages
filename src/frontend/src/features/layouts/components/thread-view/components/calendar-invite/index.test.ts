@@ -16,6 +16,7 @@ import {
     getAttendeeStatusInfo,
     createContactFromAttendee,
     collapseRecurringEvents,
+    findCounterProposer,
 } from "./calendar-helper";
 import { buildAttendeeList } from "./index";
 
@@ -892,5 +893,30 @@ describe("buildAttendeeList", () => {
         );
         expect(entries).toHaveLength(2);
         expect(entries[1].attendee.email).toBe("nicK@example.com");
+    });
+});
+
+describe("findCounterProposer", () => {
+    const event = (organizer: unknown, attendees: unknown[]) =>
+        ({ organizer, attendees }) as unknown as IcsEvent;
+
+    it("should return the only guest", () => {
+        const proposer = findCounterProposer(
+            event({ email: "Org@Example.com" }, [
+                { email: "org@example.com" },
+                { email: "guest@example.com" },
+            ]),
+        );
+        expect(proposer?.email).toBe("guest@example.com");
+    });
+
+    it("should return nothing when several guests are listed", () => {
+        const proposer = findCounterProposer(
+            event({ email: "org@example.com" }, [
+                { email: "first@example.com" },
+                { email: "second@example.com" },
+            ]),
+        );
+        expect(proposer).toBeUndefined();
     });
 });
