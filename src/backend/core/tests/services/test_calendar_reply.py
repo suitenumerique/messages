@@ -6,6 +6,13 @@ from unittest import mock
 import pytest
 from icalendar import Calendar as ICalendar
 
+from core.services.calendar.reply import (
+    MAX_EVENT_COMPONENTS,
+    MAX_REPLY_ANSWERS,
+    Answer,
+    apply_answers,
+    parse_reply,
+)
 from core.services.calendar.service import (
     CalDAVError,
     CalDAVService,
@@ -80,9 +87,9 @@ def _apply(ics, stored=None):
     """
     if stored is None:
         stored = ICalendar.from_ical(SERIES)
-    reply, reason = CalDAVService._parse_reply(ics, ATTENDEE)
+    reply, reason = parse_reply(ics, ATTENDEE)
     assert reason is None
-    outcomes = CalDAVService(url="http://caldav.example/")._apply_answers(stored, reply)
+    outcomes = apply_answers(stored, reply)
     return outcomes, stored.walk("VEVENT")
 
 
@@ -245,7 +252,7 @@ def test_answer_for_one_date_does_not_change_a_change_for_this_and_future():
 def test_no_exception_when_the_event_has_too_many_components():
     stored = ICalendar.from_ical(SERIES)
     series = stored.walk("VEVENT")[0]
-    while len(stored.subcomponents) < CalDAVService._MAX_EVENT_COMPONENTS:
+    while len(stored.subcomponents) < MAX_EVENT_COMPONENTS:
         stored.add_component(ICalendar())
 
     outcomes, events = _apply(_reply((REGULAR, "DECLINED", 0)), stored)
@@ -256,9 +263,7 @@ def test_no_exception_when_the_event_has_too_many_components():
 
 
 def test_parse_refuses_a_long_uid():
-    reply, reason = CalDAVService._parse_reply(
-        _reply((None, "ACCEPTED", 0), uid="u" * 256), ATTENDEE
-    )
+    reply, reason = parse_reply(_reply((None, "ACCEPTED", 0), uid="u" * 256), ATTENDEE)
 
     assert reply is None
     assert reason == "unparseable-reply"
@@ -342,30 +347,28 @@ def test_answer_for_an_occurrence_before_a_new_answer_for_the_series():
 
 def test_answer_for_an_occurrence_that_repeats_the_series_answer_adds_nothing():
     stored = ICalendar.from_ical(SERIES)
-    service = CalDAVService(url="http://caldav.example/")
     for ics in (_reply((None, "ACCEPTED", 0)), _reply((REGULAR, "ACCEPTED", 0))):
-        reply, _ = CalDAVService._parse_reply(ics, ATTENDEE)
-        outcomes = service._apply_answers(stored, reply)
+        reply, _ = parse_reply(ics, ATTENDEE)
+        outcomes = apply_answers(stored, reply)
 
     assert outcomes == ["unchanged"]
     assert len(stored.walk("VEVENT")) == 2
 
 
 def test_parse_reads_a_limited_number_of_answers():
-    answers = [(None, "ACCEPTED", 0)] * (CalDAVService._MAX_REPLY_ANSWERS + 5)
+    answers = [(None, "ACCEPTED", 0)] * (MAX_REPLY_ANSWERS + 5)
 
-    reply, _ = CalDAVService._parse_reply(_reply(*answers), ATTENDEE)
+    reply, _ = parse_reply(_reply(*answers), ATTENDEE)
 
-    assert len(reply["answers"]) == CalDAVService._MAX_REPLY_ANSWERS
+    assert len(reply.answers) == MAX_REPLY_ANSWERS
 
 
 def test_same_answer_is_unchanged():
     stored = ICalendar.from_ical(SERIES)
-    reply, _ = CalDAVService._parse_reply(_reply((MOVED, "DECLINED", 1)), ATTENDEE)
-    service = CalDAVService(url="http://caldav.example/")
+    reply, _ = parse_reply(_reply((MOVED, "DECLINED", 1)), ATTENDEE)
 
-    assert service._apply_answers(stored, reply) == ["applied"]
-    assert service._apply_answers(stored, reply) == ["unchanged"]
+    assert apply_answers(stored, reply) == ["applied"]
+    assert apply_answers(stored, reply) == ["unchanged"]
 
 
 def test_applied_answer_is_recorded_as_sabredav_does():
@@ -384,17 +387,17 @@ def test_parse_ignores_a_vevent_with_another_uid():
         f"ATTENDEE;PARTSTAT=DECLINED:mailto:{ATTENDEE}\nEND:VEVENT\nEND:VCALENDAR",
     )
 
-    reply, reason = CalDAVService._parse_reply(ics, ATTENDEE)
+    reply, reason = parse_reply(ics, ATTENDEE)
 
     assert reason is None
-    assert reply["uid"] == "series@example.com"
-    assert [answer["partstat"] for answer in reply["answers"]] == ["ACCEPTED"]
+    assert reply.uid == "series@example.com"
+    assert [answer.partstat for answer in reply.answers] == ["ACCEPTED"]
 
 
 def test_parse_refuses_an_answer_for_a_range_of_occurrences():
     ics = _reply(("RECURRENCE-ID;RANGE=THISANDFUTURE:20260316T090000Z", "DECLINED", 0))
 
-    assert CalDAVService._parse_reply(ics, ATTENDEE) == (
+    assert parse_reply(ics, ATTENDEE) == (
         None,
         "recurrence-not-supported",
     )
@@ -403,14 +406,14 @@ def test_parse_refuses_an_answer_for_a_range_of_occurrences():
 def test_parse_refuses_an_invalid_recurrence_id():
     ics = _reply(("RECURRENCE-ID;VALUE=DURATION:PT1H", "DECLINED", 0))
 
-    assert CalDAVService._parse_reply(ics, ATTENDEE) == (None, "unparseable-reply")
+    assert parse_reply(ics, ATTENDEE) == (None, "unparseable-reply")
 
 
 def test_parse_does_not_match_a_letter_that_lowers_to_ascii():
     # ``str.lower()`` maps U+212A KELVIN SIGN to "k".
     ics = _reply((None, "ACCEPTED", 0)).replace(ATTENDEE, "nick@example.com")
 
-    assert CalDAVService._parse_reply(ics, "nic\u212a@example.com") == (
+    assert parse_reply(ics, "nic\u212a@example.com") == (
         None,
         "attendee-mismatch",
     )
@@ -421,7 +424,7 @@ RESOURCE = "http://caldav.example/cal/series.ics"
 
 def test_write_is_not_tried_again_without_an_etag():
     service = CalDAVService(url="http://caldav.example/")
-    reply, _reason = CalDAVService._parse_reply(_reply((None, "ACCEPTED", 0)), ATTENDEE)
+    reply, _reason = parse_reply(_reply((None, "ACCEPTED", 0)), ATTENDEE)
     conflict = CalDAVError("precondition failed", status_code=412)
     with (
         mock.patch.object(service, "_put_resource", side_effect=conflict) as put,
@@ -436,16 +439,16 @@ def test_write_is_not_tried_again_without_an_etag():
 
 
 def test_parse_reads_the_answer_in_upper_case():
-    reply, _ = CalDAVService._parse_reply(_reply((None, "accepted", 0)), ATTENDEE)
+    reply, _ = parse_reply(_reply((None, "accepted", 0)), ATTENDEE)
 
-    assert reply["answers"][0]["partstat"] == "ACCEPTED"
+    assert reply.answers[0].partstat == "ACCEPTED"
 
 
 @pytest.mark.parametrize("partstat", ["DELEGATED", "NEEDS-ACTION", "X-MAYBE"])
 def test_parse_refuses_an_answer_that_cannot_be_applied(partstat):
     ics = _reply((None, partstat, 0))
 
-    assert CalDAVService._parse_reply(ics, ATTENDEE) == (None, "attendee-mismatch")
+    assert parse_reply(ics, ATTENDEE) == (None, "attendee-mismatch")
 
 
 # A REPLY as SabreDAV writes it for an event that has no SEQUENCE.
@@ -470,10 +473,10 @@ END:VCALENDAR"""
 
 
 def test_parse_reads_a_reply_with_an_empty_sequence():
-    reply, reason = CalDAVService._parse_reply(SABREDAV_REPLY, ATTENDEE)
+    reply, reason = parse_reply(SABREDAV_REPLY, ATTENDEE)
 
     assert reason is None
-    assert reply["answers"] == [{"recurrence_id": None, "partstat": "DECLINED"}]
+    assert reply.answers == (Answer(None, "DECLINED"),)
 
 
 def test_answer_with_an_empty_sequence_is_applied():

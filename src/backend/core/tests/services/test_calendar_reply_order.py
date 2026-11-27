@@ -1,6 +1,7 @@
 """Tests for the order in which iTIP REPLYs change a recurring event."""
 # pylint: disable=protected-access, missing-function-docstring
 
+from dataclasses import replace
 from unittest import mock
 
 from django.core.cache import cache
@@ -9,11 +10,9 @@ import pytest
 from django_redis.exceptions import ConnectionInterrupted
 from icalendar import Calendar as ICalendar
 
-from core.services.calendar.service import (
-    CalDAVService,
-    CalDAVTransientError,
-    _reply_order_key,
-)
+from core.services.calendar.reply import parse_reply
+from core.services.calendar.reply_order import reply_order_key
+from core.services.calendar.service import CalDAVService, CalDAVTransientError
 from core.tests.services.test_calendar_reply import (
     ATTENDEE,
     MOVED,
@@ -29,8 +28,8 @@ from core.tests.services.test_calendar_reply import (
 def _apply_to_resource(ics, stored, received_at=None, put=None):
     """Apply a REPLY to a stored resource. Return the result and the PUT mock."""
     service = CalDAVService(url="http://caldav.example/")
-    reply, _reason = CalDAVService._parse_reply(ics, ATTENDEE)
-    reply["received_at"] = received_at
+    reply, _reason = parse_reply(ics, ATTENDEE)
+    reply = replace(reply, received_at=received_at)
     with mock.patch.object(service, "_put_resource", side_effect=put) as put_mock:
         result = service._apply_reply_to_resource(RESOURCE, stored, '"1"', reply)
     return result, put_mock
@@ -133,7 +132,7 @@ def test_old_reply_keeps_changes_to_an_exception_of_a_newer_reply():
 @pytest.mark.usefixtures("reply_order")
 def test_state_keeps_the_newest_replies():
     stored = ICalendar.from_ical(SERIES)
-    with mock.patch("core.services.calendar.service._MAX_REPLY_ORDER_ANSWERS", 2):
+    with mock.patch("core.services.calendar.reply_order.MAX_REPLY_ORDER_ANSWERS", 2):
         for at, partstat in (
             (100.0, "ACCEPTED"),
             (200.0, "DECLINED"),
@@ -145,7 +144,7 @@ def test_state_keeps_the_newest_replies():
             _reply((None, "DECLINED", 0)), stored, received_at=50.0
         )
 
-    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
+    state = cache.get(reply_order_key(RESOURCE, ATTENDEE))
     assert [old["at"] for old in state["replies"]] == [200.0, 300.0]
     assert state["floor"] == 100.0
     assert result == {"applied": False, "reason": "superseded"}
@@ -155,7 +154,7 @@ def test_state_keeps_the_newest_replies():
 @pytest.mark.usefixtures("reply_order")
 def test_state_limits_the_answers_of_its_replies():
     stored = ICalendar.from_ical(SERIES)
-    with mock.patch("core.services.calendar.service._MAX_REPLY_ORDER_ANSWERS", 3):
+    with mock.patch("core.services.calendar.reply_order.MAX_REPLY_ORDER_ANSWERS", 3):
         _apply_to_resource(
             _reply((MOVED, "ACCEPTED", 0), (REGULAR, "DECLINED", 0)),
             stored,
@@ -167,7 +166,7 @@ def test_state_limits_the_answers_of_its_replies():
             received_at=200.0,
         )
 
-    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
+    state = cache.get(reply_order_key(RESOURCE, ATTENDEE))
     assert [old["at"] for old in state["replies"]] == [200.0]
     assert state["floor"] == 100.0
     assert [_partstat(event) for event in stored.walk("VEVENT")] == [
@@ -303,14 +302,14 @@ def test_state_covers_the_inbound_deferral(settings):
             _reply((None, "ACCEPTED", 0)), stored, received_at=100.0 + deferral
         )
 
-    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
+    state = cache.get(reply_order_key(RESOURCE, ATTENDEE))
     assert [old["at"] for old in state["replies"]] == [100.0, 100.0 + deferral]
     assert cache_set.call_args.args[2] > deferral
 
 
 @pytest.mark.usefixtures("reply_order")
 def test_arrival_times_of_an_older_version_are_ignored():
-    cache.set(_reply_order_key(RESOURCE, ATTENDEE), {None: 200.0}, 60)
+    cache.set(reply_order_key(RESOURCE, ATTENDEE), {None: 200.0}, 60)
     stored = ICalendar.from_ical(SERIES)
 
     result, _put = _apply_to_resource(
@@ -333,14 +332,14 @@ def test_same_reply_twice_is_kept_once():
     assert first == {"applied": True, "reason": "applied"}
     assert again == {"applied": False, "reason": "unchanged"}
     assert put.call_count == 0
-    state = cache.get(_reply_order_key(RESOURCE, ATTENDEE))
-    assert state["replies"] == [
+    state = cache.get(reply_order_key(RESOURCE, ATTENDEE))
+    assert state["replies"] == (
         {
             "at": 100.0,
-            "answers": [{"recurrence_id": None, "partstat": "ACCEPTED"}],
+            "answers": ({"recurrence_id": None, "partstat": "ACCEPTED"},),
             "written": True,
-        }
-    ]
+        },
+    )
 
 
 @pytest.mark.usefixtures("reply_order")

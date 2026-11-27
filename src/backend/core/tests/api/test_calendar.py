@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import threading
 import uuid
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 from urllib.parse import quote
@@ -33,6 +34,7 @@ from core.enums import ChannelTypes, InboundOrigin, MailboxRoleChoices
 from core.mda.inbound import deliver_inbound_message
 from core.mda.inbound_tasks import _enqueue_itip_reply
 from core.services.calendar.ics_rebuild import rebuild_for_storage
+from core.services.calendar.reply import parse_reply
 from core.services.calendar.service import (
     CalDAVError,
     CalDAVService,
@@ -2919,26 +2921,24 @@ class TestApplyReply:
         reply = self._reply("no-dtstart@example.com").replace(
             "DTSTART:20260601T100000Z\n", ""
         )
-        parsed, reason = CalDAVService._parse_reply(reply, self.ATTENDEE)
+        parsed, reason = parse_reply(reply, self.ATTENDEE)
         assert reason is None
-        assert parsed["uid"] == "no-dtstart@example.com"
+        assert parsed.uid == "no-dtstart@example.com"
 
     def test_reply_without_dtstamp_parses(self):
         reply = self._reply("no-dtstamp@example.com").replace(
             "DTSTAMP:20260102T000000Z\n", ""
         )
-        parsed, reason = CalDAVService._parse_reply(reply, self.ATTENDEE)
+        parsed, reason = parse_reply(reply, self.ATTENDEE)
         assert reason is None
-        assert parsed["answers"][0]["partstat"] == "ACCEPTED"
+        assert parsed.answers[0].partstat == "ACCEPTED"
 
     def test_no_etag_refuses_unconditional_write(self, caldav_channel):
         service = CalDAVService.from_channel(caldav_channel)
         stored = ICalendar.from_ical(
             _ORGANIZER_EVENT.format(uid="noetag", seq=0, attendee=self.ATTENDEE)
         )
-        reply, _ = CalDAVService._parse_reply(
-            self._reply("noetag", "ACCEPTED"), self.ATTENDEE
-        )
+        reply, _ = parse_reply(self._reply("noetag", "ACCEPTED"), self.ATTENDEE)
         put_calls = []
 
         with (
@@ -3065,9 +3065,7 @@ class TestApplyReply:
         stored = ICalendar.from_ical(
             _ORGANIZER_EVENT.format(uid="retry", seq=0, attendee=self.ATTENDEE)
         )
-        reply, _ = CalDAVService._parse_reply(
-            self._reply("retry", "ACCEPTED"), self.ATTENDEE
-        )
+        reply, _ = parse_reply(self._reply("retry", "ACCEPTED"), self.ATTENDEE)
         fresh = _ORGANIZER_EVENT.format(uid="retry", seq=0, attendee=self.ATTENDEE)
         puts = []
 
@@ -3095,10 +3093,8 @@ class TestApplyReply:
         # After a 412, or to get a missing etag, the event is read again.
         service = CalDAVService.from_channel(caldav_channel)
         event = _ORGANIZER_EVENT.format(uid="moved", seq=0, attendee=self.ATTENDEE)
-        reply, _ = CalDAVService._parse_reply(
-            self._reply("moved", "ACCEPTED"), self.ATTENDEE
-        )
-        reply["organizer"] = "organizer@example.com"
+        reply, _ = parse_reply(self._reply("moved", "ACCEPTED"), self.ATTENDEE)
+        reply = replace(reply, organizer="organizer@example.com")
         fresh = event.replace("organizer@example.com", "other@example.com")
         puts = []
 
@@ -3122,9 +3118,7 @@ class TestApplyReply:
         stored = ICalendar.from_ical(
             _ORGANIZER_EVENT.format(uid="retry", seq=0, attendee=self.ATTENDEE)
         )
-        reply, _ = CalDAVService._parse_reply(
-            self._reply("retry", "ACCEPTED"), self.ATTENDEE
-        )
+        reply, _ = parse_reply(self._reply("retry", "ACCEPTED"), self.ATTENDEE)
         fresh = _ORGANIZER_EVENT.format(uid="retry", seq=0, attendee=self.ATTENDEE)
 
         def always_412(url, body, etag=None):

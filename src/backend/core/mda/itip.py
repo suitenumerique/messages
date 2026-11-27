@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from jmap_email import body_part_text
 
-from core.services.calendar.service import attendee_key
+from core.services.calendar.attendees import attendee_key
 from core.services.calendar.untrusted_ics import parse_untrusted_ics
 
 logger = logging.getLogger(__name__)
