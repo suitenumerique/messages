@@ -179,7 +179,7 @@ const ConflictTimeline = ({
                                 const span = spanOf(e);
                                 return (
                                     <span
-                                        key={`${e.summary}-${e.start ?? index}`}
+                                        key={`${e.summary}-${e.start}-${index}`}
                                         className="conflict-timeline__bar"
                                         style={place(span)}
                                         title={`${e.summary} · ${label(span)}`}
