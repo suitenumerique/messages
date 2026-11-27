@@ -9216,6 +9216,11 @@
                         "description": "Return the number of threads with unread messages in the mailbox.",
                         "readOnly": true
                     },
+                    "count_unread_inbox": {
+                        "type": "integer",
+                        "description": "Return the number of unread threads in the inbox of the mailbox.",
+                        "readOnly": true
+                    },
                     "count_threads": {
                         "type": "integer",
                         "description": "Return the number of threads in the mailbox.",
@@ -9311,6 +9316,7 @@
                     "count_assigned",
                     "count_delivering",
                     "count_threads",
+                    "count_unread_inbox",
                     "count_unread_mentions",
                     "count_unread_threads",
                     "domain_id",

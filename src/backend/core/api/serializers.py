@@ -398,6 +398,7 @@ class MailboxSerializer(AbilitiesModelSerializer):
     domain_id = serializers.UUIDField(read_only=True)
     role = serializers.SerializerMethodField(read_only=True)
     count_unread_threads = serializers.SerializerMethodField(read_only=True)
+    count_unread_inbox = serializers.SerializerMethodField(read_only=True)
     count_threads = serializers.SerializerMethodField(read_only=True)
     count_delivering = serializers.SerializerMethodField(read_only=True)
     count_unread_mentions = serializers.SerializerMethodField(read_only=True)
@@ -415,6 +416,7 @@ class MailboxSerializer(AbilitiesModelSerializer):
             "is_shared",
             "role",
             "count_unread_threads",
+            "count_unread_inbox",
             "count_threads",
             "count_delivering",
             "count_unread_mentions",
@@ -464,6 +466,13 @@ class MailboxSerializer(AbilitiesModelSerializer):
                     "id",
                     filter=models.ThreadAccess.unread_filter(),
                 ),
+                # The threads the Inbox folder lists: active ones, minus the
+                # spam the threads list leaves out by default.
+                count_unread_inbox=Count(
+                    "id",
+                    filter=models.ThreadAccess.unread_filter()
+                    & Q(thread__has_active=True, thread__is_spam=False),
+                ),
                 count_threads=Count("thread"),
                 count_delivering=Count(
                     "thread",
@@ -512,6 +521,10 @@ class MailboxSerializer(AbilitiesModelSerializer):
     def get_count_unread_threads(self, instance) -> int:
         """Return the number of threads with unread messages in the mailbox."""
         return self._get_cached_counts(instance)["count_unread_threads"]
+
+    def get_count_unread_inbox(self, instance) -> int:
+        """Return the number of unread threads in the inbox of the mailbox."""
+        return self._get_cached_counts(instance)["count_unread_inbox"]
 
     def get_count_threads(self, instance) -> int:
         """Return the number of threads in the mailbox."""

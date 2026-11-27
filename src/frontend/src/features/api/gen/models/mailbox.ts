@@ -33,6 +33,8 @@ identity mailbox. */
   readonly role: MailboxRole;
   /** Return the number of threads with unread messages in the mailbox. */
   readonly count_unread_threads: number;
+  /** Return the number of unread threads in the inbox of the mailbox. */
+  readonly count_unread_inbox: number;
   /** Return the number of threads in the mailbox. */
   readonly count_threads: number;
   /** Return the number of threads with messages being delivered. */

@@ -404,6 +404,50 @@ class TestMailboxViewSet:
         assert response.data["count_unread_mentions"] == 0
         assert response.data["count_assigned"] == 0
 
+    def test_list_count_unread_inbox(self):
+        """count_unread_inbox should count the unread threads the Inbox lists,
+        leaving out the archived, spam and trashed ones that
+        count_unread_threads includes."""
+        user = factories.UserFactory()
+        mailbox = factories.MailboxFactory()
+        factories.MailboxAccessFactory(
+            mailbox=mailbox, user=user, role=models.MailboxRoleChoices.EDITOR
+        )
+
+        now = timezone.now()
+        for thread_kwargs, read_at in [
+            ({"has_active": True}, None),
+            ({"has_active": True}, now),
+            ({"has_archived": True}, None),
+            ({"has_active": True, "is_spam": True}, None),
+            ({"has_trashed": True, "is_trashed": True}, None),
+        ]:
+            factories.ThreadAccessFactory(
+                mailbox=mailbox,
+                thread=factories.ThreadFactory(messaged_at=now, **thread_kwargs),
+                role=enums.ThreadAccessRoleChoices.EDITOR,
+                read_at=read_at,
+            )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(reverse("mailboxes-list"))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data[0]["count_unread_threads"] == 4
+        assert response.data[0]["count_unread_inbox"] == 1
+
+        # Same number as the Inbox badge of the selected mailbox.
+        response = client.get(
+            reverse("threads-stats"),
+            {
+                "mailbox_id": str(mailbox.id),
+                "has_active": "1",
+                "stats_fields": "all_unread",
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == {"all_unread": 1}
+
     def test_list_count_unread_mentions(self):
         """count_unread_mentions should count distinct threads with an active
         unread MENTION UserEvent for the current user, scoped per mailbox."""

@@ -68,12 +68,12 @@ export const MailboxSelector = ({
       <span className="mailbox-selector__option-name">
         {MailboxHelper.getLabel(mailbox)}
       </span>
-      {mailbox.id !== selectedMailbox.id && mailbox.count_unread_threads > 0 && (
+      {mailbox.id !== selectedMailbox.id && mailbox.count_unread_inbox > 0 && (
             <span
               className="mailbox-selector__option-unread-count"
-              aria-label={t("{{count}} unread", { count: mailbox.count_unread_threads })}
+              aria-label={t("{{count}} unread", { count: mailbox.count_unread_inbox })}
             >
-              {mailbox.count_unread_threads > 9999 ? "9999+" : mailbox.count_unread_threads}
+              {mailbox.count_unread_inbox > 9999 ? "9999+" : mailbox.count_unread_inbox}
             </span>
           )}
       </div>) as unknown as string,
