@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconType } from "@gouvfr-lasuite/ui-components";
 import { Icon } from "@/features/ui/components/icon";
+import { Badge } from "@/features/ui/components/badge";
 import { useAuth } from "@/features/auth";
 import { DEFAULT_CALENDAR_COLOR } from "./calendars";
 
@@ -71,18 +72,6 @@ export const spanOf = (conflict: ConflictInfo): Span | null => {
 // All-day events count as starting last, so they are drawn under timed ones.
 const startOf = (conflict: ConflictInfo) => spanOf(conflict)?.start ?? Number.MAX_SAFE_INTEGER;
 
-/**
- * The part of a span that falls within the invitation; all-day on either side
- * (null) means the whole of the other one.
- */
-export const overlapOf = (span: Span | null, event: Span | null): Span | null => {
-    if (!event) return span;
-    if (!span) return event;
-    const start = Math.max(span.start, event.start);
-    const end = Math.min(span.end, event.end);
-    return end > start ? { start, end } : null;
-};
-
 /** The hours the timeline covers (at least two) and its tick marks. */
 export const timelineScale = (spans: (Span | null)[]) => {
     const timed = spans.filter((s): s is Span => s !== null);
@@ -100,30 +89,6 @@ const swatch = (calendar: CalendarOption) => (
         className="calendar-select__color"
         style={{ backgroundColor: calendar.color || DEFAULT_CALENDAR_COLOR }}
     />
-);
-
-/** A bar on the timeline with its title on it. */
-const TimelineBar = ({
-    style,
-    text,
-    title,
-    saved = false,
-}: {
-    style: CSSProperties;
-    text: string;
-    title: string;
-    saved?: boolean;
-}) => (
-    <>
-        <span className={`conflict-timeline__bar${saved ? " conflict-timeline__bar--saved" : ""}`} style={style} />
-        <span
-            className={`conflict-timeline__bar-text${saved ? " conflict-timeline__bar-text--saved" : ""}`}
-            style={{ left: style.left, width: style.width }}
-            title={title}
-        >
-            {text}
-        </span>
-    </>
 );
 
 type Invitation = { start: Date; end: Date; allDay: boolean; title: string };
@@ -160,27 +125,25 @@ const ConflictTimeline = ({
     const label = (span: Span | null) =>
         span ? `${time.format(span.start)}–${time.format(span.end)}` : t("All day");
 
+    // Laid out like the free/busy timeline of the Calendars event dialog: hour
+    // columns, busy time per calendar, and the invitation striped across all rows.
     return (
         <div className="conflict-timeline">
-            {ticks.length > 0 && (
-                <div className="conflict-timeline__axis" aria-hidden="true">
-                    {ticks.map((tick) => (
+            <div className="conflict-timeline__lanes" aria-hidden="true">
+                {ticks
+                    .filter((tick) => tick > from && tick < to)
+                    .map((tick) => (
+                        <span key={tick} className="conflict-timeline__hour" style={{ left: place({ start: tick, end: tick }).left }} />
+                    ))}
+            </div>
+            <div className="conflict-timeline__axis" aria-hidden="true">
+                {ticks
+                    .filter((tick) => tick < to)
+                    .map((tick) => (
                         <span key={tick} style={{ left: place({ start: tick, end: tick }).left }}>
                             {time.format(tick)}
                         </span>
                     ))}
-                </div>
-            )}
-            <div className="conflict-timeline__row conflict-timeline__row--invitation">
-                <span className="conflict-timeline__label">{t("Invitation")}</span>
-                <span className="conflict-timeline__track">
-                    <TimelineBar
-                        style={place(event)}
-                        text={invitation.title}
-                        title={`${invitation.title} · ${label(event)}`}
-                    />
-                </span>
-                <span />
             </div>
             {calendars.map((calendar) => {
                 // Events that overlap each other: the one that starts first is drawn on top.
@@ -191,60 +154,56 @@ const ConflictTimeline = ({
                 const saved = savedIds.includes(calendar.id);
                 const checked = fetchedIds.includes(calendar.id);
                 return (
-                    <div key={calendar.id} className="conflict-timeline__row">
+                    <div key={calendar.id} className="conflict-timeline__row" style={color}>
                         <span className="conflict-timeline__label">
-                            <span className="conflict-timeline__calendar">
-                                {swatch(calendar)}
-                                <span className="conflict-timeline__calendar-name">{calendar.name}</span>
-                            </span>
+                            {swatch(calendar)}
+                            <span className="conflict-timeline__calendar-name">{calendar.name}</span>
+                            {calendar.id !== lockedId && (
+                                <Button
+                                    className="conflict-timeline__remove"
+                                    size="small"
+                                    variant="tertiary"
+                                    color="neutral"
+                                    icon={<Icon name="close" type={IconType.OUTLINED} />}
+                                    aria-label={t("Remove {{name}}", { name: calendar.name })}
+                                    title={t("Remove {{name}}", { name: calendar.name })}
+                                    onClick={() => onRemove(calendar.id)}
+                                />
+                            )}
                         </span>
                         <span className="conflict-timeline__track">
-                            <span className="conflict-timeline__window" style={place(event)} />
-                            {events.length === 0 && !saved && (checked || !loading) && (
-                                <span className="conflict-timeline__free">
-                                    {checked ? t("Free") : t("Not checked")}
-                                </span>
-                            )}
-                            {saved && (
-                                <TimelineBar
-                                    saved
-                                    style={{ ...place(event), ...color }}
-                                    text={invitation.title}
-                                    title={`${invitation.title} · ${label(event)}`}
-                                />
+                            {!checked && !saved && !loading && (
+                                <span className="conflict-timeline__unchecked">{t("Not checked")}</span>
                             )}
                             {events.map((e, index) => {
                                 const span = spanOf(e);
-                                const overlap = overlapOf(span, event);
                                 return (
-                                    <span key={`${e.summary}-${e.start ?? index}`}>
-                                        <TimelineBar
-                                            style={{ ...place(span), ...color }}
-                                            text={e.summary}
-                                            title={`${e.summary} · ${label(span)}`}
-                                        />
-                                        {overlap && <span className="conflict-timeline__overlap" style={place(overlap)} />}
+                                    <span
+                                        key={`${e.summary}-${e.start ?? index}`}
+                                        className="conflict-timeline__bar"
+                                        style={place(span)}
+                                        title={`${e.summary} · ${label(span)}`}
+                                    >
+                                        <span className="conflict-timeline__bar-text">{e.summary}</span>
                                     </span>
                                 );
                             })}
+                            {saved && (
+                                <span
+                                    className="conflict-timeline__bar conflict-timeline__bar--saved"
+                                    style={place(event)}
+                                    title={`${invitation.title} · ${label(event)}`}
+                                >
+                                    <span className="conflict-timeline__bar-text">{invitation.title}</span>
+                                </span>
+                            )}
                         </span>
-                        {calendar.id === lockedId ? (
-                            <span />
-                        ) : (
-                            <Button
-                                className="conflict-timeline__remove"
-                                size="small"
-                                variant="tertiary"
-                                color="neutral"
-                                icon={<Icon name="close" type={IconType.OUTLINED} />}
-                                aria-label={t("Remove {{name}}", { name: calendar.name })}
-                                title={t("Remove {{name}}", { name: calendar.name })}
-                                onClick={() => onRemove(calendar.id)}
-                            />
-                        )}
                     </div>
                 );
             })}
+            <div className="conflict-timeline__lanes conflict-timeline__lanes--rows" aria-hidden="true">
+                <span className="conflict-timeline__invitation" style={place(event)} />
+            </div>
         </div>
     );
 };
@@ -286,19 +245,22 @@ export const ConflictCheck = ({
     const pending = loading && checkedIds.some((id) => !fetchedIds.includes(id));
 
     return (
-        <div
-            className={`calendar-invite__conflicts${hasConflicts ? "" : " calendar-invite__conflicts--none"}`}
-            role={hasConflicts ? "alert" : "status"}
-        >
+        <div className="calendar-invite__conflicts" role={hasConflicts ? "alert" : "status"}>
             <div className="calendar-invite__conflicts-header">
-                <Icon name={hasConflicts ? "warning" : "event_available"} type={IconType.OUTLINED} />
                 <span>
+                    {event.start.toLocaleDateString(language, { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+                <Badge
+                    color={hasConflicts ? "error" : pending ? "neutral" : "success"}
+                    variant="secondary"
+                    compact
+                >
                     {hasConflicts
                         ? t("{{count}} conflicting events", { count: shown.length })
                         : pending
                           ? t("Checking calendars…")
                           : t("No conflicts")}
-                </span>
+                </Badge>
             </div>
             <ConflictTimeline
                 conflicts={shown}

@@ -1,4 +1,4 @@
-import { overlapOf, readStoredIds, spanOf, timelineScale, type ConflictInfo } from "./conflict-check";
+import { readStoredIds, spanOf, timelineScale, type ConflictInfo } from "./conflict-check";
 
 const HOUR = 60 * 60 * 1000;
 const at = (iso: string) => new Date(iso).getTime();
@@ -24,28 +24,6 @@ describe("spanOf", () => {
     it("returns null for an all-day event or missing times", () => {
         expect(spanOf(conflict({ all_day: true }))).toBeNull();
         expect(spanOf(conflict({ end: null }))).toBeNull();
-    });
-});
-
-describe("overlapOf", () => {
-    const invitation = { start: at("2026-11-19T11:00:00Z"), end: at("2026-11-19T12:00:00Z") };
-
-    it("returns the part within the invitation", () => {
-        const busy = { start: at("2026-11-19T10:30:00Z"), end: at("2026-11-19T11:30:00Z") };
-        expect(overlapOf(busy, invitation)).toEqual({
-            start: at("2026-11-19T11:00:00Z"),
-            end: at("2026-11-19T11:30:00Z"),
-        });
-    });
-
-    it("returns null when the two only touch", () => {
-        const before = { start: at("2026-11-19T10:00:00Z"), end: at("2026-11-19T11:00:00Z") };
-        expect(overlapOf(before, invitation)).toBeNull();
-    });
-
-    it("treats an all-day side as the whole of the other", () => {
-        expect(overlapOf(null, invitation)).toEqual(invitation);
-        expect(overlapOf(invitation, null)).toEqual(invitation);
     });
 });
 

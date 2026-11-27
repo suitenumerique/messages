@@ -295,187 +295,99 @@
 
 .calendar-invite__conflicts {
     margin-top: var(--c--globals--spacings--xs);
-    padding: var(--c--globals--spacings--xs) var(--c--globals--spacings--sm);
-    border-radius: 4px;
-    background-color: var(--c--contextuals--background--semantic--warning--tertiary);
-    color: var(--c--contextuals--content--semantic--warning--primary);
     font-size: var(--c--globals--font--sizes--sm);
-}
-
-.calendar-invite__conflicts--none {
-    background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
-    color: var(--c--contextuals--content--semantic--neutral--secondary);
 }
 
 .calendar-invite__conflicts-header {
     display: flex;
     align-items: center;
-    gap: var(--c--globals--spacings--sm);
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--xs);
+    margin-bottom: var(--c--globals--spacings--3xs);
+    font-size: var(--c--globals--font--sizes--xs);
     font-weight: 500;
-
-    .material-icon {
-        font-size: 18px;
-    }
 }
 
-// Invitation and conflicts as bars on a shared time axis:
-// label | track | remove.
+// The free/busy timeline of the Calendars event dialog: names | hour columns,
+// busy time as light blocks, the invitation striped across all rows.
 .conflict-timeline {
-    --label-width: 25%;
-    --remove-width: 24px;
-    margin-top: var(--c--globals--spacings--xs);
+    --label-width: clamp(7rem, 25%, 12rem);
+    --axis-height: 20px;
+    --row-height: 24px;
+    position: relative;
+    border: 1px solid var(--c--contextuals--border--surface--primary);
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: var(--c--globals--font--sizes--xs);
+    font-variant-numeric: tabular-nums;
     color: var(--c--contextuals--content--semantic--neutral--primary);
+}
+
+.conflict-timeline__lanes {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--label-width);
+    right: 0;
+    border-left: 1px solid var(--c--contextuals--border--surface--primary);
+    pointer-events: none;
+}
+
+.conflict-timeline__lanes--rows {
+    top: var(--axis-height);
+    border-left: none;
+}
+
+.conflict-timeline__hour {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--c--contextuals--border--surface--primary);
 }
 
 .conflict-timeline__axis {
     position: relative;
-    height: 1.4em;
-    margin: 0 var(--remove-width) 0 var(--label-width);
-    font-size: var(--c--globals--font--sizes--xs);
+    box-sizing: border-box;
+    height: var(--axis-height);
+    margin-left: var(--label-width);
+    border-bottom: 1px solid var(--c--contextuals--border--surface--primary);
     color: var(--c--contextuals--content--semantic--neutral--secondary);
+    line-height: var(--axis-height);
 
     span {
         position: absolute;
-        transform: translateX(-50%);
+        padding-left: 4px;
         white-space: nowrap;
-    }
-
-    span:first-child {
-        transform: none;
-    }
-
-    span:last-child {
-        transform: translateX(-100%);
     }
 }
 
 .conflict-timeline__row {
     display: grid;
-    grid-template-columns: var(--label-width) 1fr var(--remove-width);
-    align-items: center;
-    padding: var(--c--globals--spacings--3xs) 0;
+    grid-template-columns: var(--label-width) 1fr;
+    height: var(--row-height);
 }
 
 .conflict-timeline__label {
-    min-width: 0;
-    padding-right: var(--c--globals--spacings--xs);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 500;
-}
-
-.conflict-timeline__calendar {
     display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--3xs);
     min-width: 0;
+    padding: 0 var(--c--globals--spacings--2xs);
 }
 
 .conflict-timeline__calendar-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.conflict-timeline__track {
-    position: relative;
-    height: 20px;
-    border-radius: 3px;
-    background-color: var(--c--contextuals--background--semantic--neutral--tertiary);
-}
-
-// Conflicts: the event in its calendar's colour, light, with its title on it;
-// the part that clashes with the invitation striped red. The invitation's own
-// slot is shaded on every row, and drawn solid on its own row.
-.conflict-timeline__bar,
-.conflict-timeline__window,
-.conflict-timeline__overlap,
-.conflict-timeline__bar-text {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    min-width: 3px;
-    border-radius: 3px;
-}
-
-.conflict-timeline__bar {
-    background-color: color-mix(in srgb, var(--bar-color) 35%, white);
-}
-
-// The invitation, already saved in this calendar, drawn over the events it
-// clashes with; the overlap stripes stay visible on top, under its title.
-.conflict-timeline__bar--saved {
-    background-color: var(--bar-color);
-    z-index: 1;
-}
-
-.conflict-timeline__bar-text.conflict-timeline__bar-text--saved {
-    z-index: 3;
-    color: white;
-    text-shadow: none;
-}
-
-.conflict-timeline__window {
-    top: -4px;
-    bottom: -4px;
-    border-left: 1px dashed var(--c--contextuals--content--semantic--brand--primary);
-    border-right: 1px dashed var(--c--contextuals--content--semantic--brand--primary);
-    border-radius: 0;
-    background-color: color-mix(in srgb, var(--c--contextuals--content--semantic--brand--primary) 8%, transparent);
-}
-
-.conflict-timeline__overlap {
-    z-index: 2;
-    opacity: 0.55;
-    background: repeating-linear-gradient(
-        -45deg,
-        var(--c--contextuals--content--semantic--error--primary) 0 4px,
-        transparent 4px 8px
-    );
-}
-
-.conflict-timeline__bar-text,
-.conflict-timeline__free {
-    padding: 0 6px;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--c--globals--font--sizes--xs);
-    line-height: 20px;
-}
-
-.conflict-timeline__bar-text {
-    font-weight: 500;
-    text-shadow: 0 0 2px white, 0 0 2px white;
-}
-
-.conflict-timeline__free {
-    position: absolute;
-    left: 0;
-    color: var(--c--contextuals--content--semantic--neutral--secondary);
-}
-
-.conflict-timeline__row--invitation {
-    .conflict-timeline__label {
-        color: var(--c--contextuals--content--semantic--brand--primary);
-    }
-
-    .conflict-timeline__bar {
-        background-color: var(--c--contextuals--content--semantic--brand--primary);
-    }
-
-    .conflict-timeline__bar-text {
-        color: white;
-        text-shadow: none;
-    }
 }
 
 .conflict-timeline__remove.c__button {
-    justify-self: end;
+    flex-shrink: 0;
     width: 20px;
     height: 20px;
     min-height: 0;
+    margin-left: auto;
     padding: 0;
     color: var(--c--contextuals--content--semantic--neutral--secondary);
 
@@ -484,11 +396,56 @@
     }
 }
 
-// One type size for names and times, a smaller one for the axis and bar
-// titles; digits of equal width so times line up.
-.conflict-timeline {
-    font-size: var(--c--globals--font--sizes--sm);
-    font-variant-numeric: tabular-nums;
+.conflict-timeline__track {
+    position: relative;
+}
+
+.conflict-timeline__bar,
+.conflict-timeline__unchecked {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: var(--row-height);
+}
+
+.conflict-timeline__bar {
+    min-width: 3px;
+    background-color: color-mix(in srgb, var(--bar-color) 40%, transparent);
+}
+
+// Titles stay readable above the invitation's stripes.
+.conflict-timeline__bar-text {
+    position: relative;
+    z-index: 1;
+}
+
+// The invitation, already saved in this calendar.
+.conflict-timeline__bar--saved {
+    background-color: var(--bar-color);
+    color: white;
+}
+
+.conflict-timeline__unchecked {
+    left: 0;
+    color: var(--c--contextuals--content--semantic--neutral--secondary);
+}
+
+.conflict-timeline__invitation {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 3px;
+    box-sizing: border-box;
+    border-inline: 2px solid var(--c--contextuals--content--semantic--success--primary);
+    background: repeating-linear-gradient(
+        -45deg,
+        color-mix(in srgb, var(--c--contextuals--content--semantic--success--primary) 35%, transparent) 0 1px,
+        transparent 1px 7px
+    );
 }
 
 .calendar-invite__rsvp-buttons {
@@ -652,30 +609,6 @@
 
     .calendar-invite__header-right .c__button {
         padding-inline: var(--c--globals--spacings--2xs);
-    }
-
-    // Name on one line, the track full width underneath.
-    .conflict-timeline__axis {
-        margin: 0;
-    }
-
-    .conflict-timeline__row {
-        grid-template-columns: 1fr var(--remove-width);
-        grid-template-areas: "label remove" "track track";
-        row-gap: var(--c--globals--spacings--3xs);
-    }
-
-    .conflict-timeline__label {
-        grid-area: label;
-    }
-
-    .conflict-timeline__track {
-        grid-area: track;
-    }
-
-    .conflict-timeline__remove.c__button {
-        grid-area: remove;
-        align-self: start;
     }
 
     .calendar-invite__calendar-chooser {
