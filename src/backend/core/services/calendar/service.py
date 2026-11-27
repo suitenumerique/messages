@@ -613,12 +613,19 @@ class CalDAVService:  # pylint: disable=too-many-instance-attributes
         """PUT to an existing resource URL, optionally If-Match ``etag``.
 
         Raises ``CalDAVError(status_code=412)`` when the precondition fails.
+        Also raises CalDAVError for an answer that is not 2xx: redirects are
+        not followed, so a 3xx answer does not prove the write.
         """
         data = ics_data.encode("utf-8") if isinstance(ics_data, str) else ics_data
         headers = {"Content-Type": "text/calendar; charset=utf-8"}
         if etag:
             headers["If-Match"] = etag
-        self._request("PUT", resource_url, data=data, headers=headers)
+        resp = self._request("PUT", resource_url, data=data, headers=headers)
+        if not 200 <= resp.status_code < 300:
+            raise CalDAVError(
+                f"PUT {resource_url} failed: HTTP {resp.status_code}",
+                status_code=resp.status_code,
+            )
 
     def _get_resource(self, resource_url):
         """Return ``(ics_text, etag)`` for a resource, or ``(None, None)`` if gone."""

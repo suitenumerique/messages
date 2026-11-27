@@ -3303,6 +3303,19 @@ def test_reply_to_a_regular_occurrence_adds_an_exception(
     assert "RRULE" not in exception
 
 
+def test_put_with_a_redirect_is_not_a_write():
+    service = CalDAVService(url="http://caldav.example/")
+    moved = mock.Mock(status_code=301)
+
+    with (
+        mock.patch.object(service, "_request", return_value=moved),
+        pytest.raises(CalDAVError) as error,
+    ):
+        service._put_resource("http://caldav.example/e.ics", "ICS", '"1"')
+
+    assert error.value.status_code == 301
+
+
 @pytest.mark.django_db()
 def test_enqueue_itip_reply_fans_out_to_mailbox_users(mailbox):
     u1 = factories.UserFactory()
