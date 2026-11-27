@@ -434,6 +434,7 @@ class TestMailboxViewSet:
         response = client.get(reverse("mailboxes-list"))
         assert response.status_code == status.HTTP_200_OK
         assert response.data[0]["count_unread_threads"] == 4
+        assert response.data[0]["count_unread_inbox"] == 1
 
         # Same number as the Inbox badge of the selected mailbox.
         response = client.get(
