@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from core.services.calendar.attendees import attendee_key, attendees_of, partstat_of
@@ -78,6 +78,18 @@ def _date_value(prop):
     return value if isinstance(value, date) else None
 
 
+def _has_lost_timezone(prop):
+    """Tell if a date-time has a TZID that the parser could not resolve.
+
+    The ICS of an email is read without its VTIMEZONEs. A custom TZID then
+    gives a date-time without timezone, which looks like a floating time.
+    """
+    value = prop.dt
+    return (
+        isinstance(value, datetime) and value.tzinfo is None and "TZID" in prop.params
+    )
+
+
 def _occurrence_key(recurrence_id):
     """Return the key of the occurrence, or None when there is no RECURRENCE-ID."""
     return None if recurrence_id is None else recurrence_key(recurrence_id)
@@ -95,7 +107,8 @@ def parse_reply(ics_data, attendee_email):
     The reasons are:
 
     - ``unparseable-reply``: the ICS is bad, no VEVENT has a UID of at
-      most 255 characters, or a RECURRENCE-ID is invalid.
+      most 255 characters, or a RECURRENCE-ID is invalid or has a TZID
+      that does not resolve.
     - ``attendee-mismatch``: the attendee gives no ACCEPTED, DECLINED or
       TENTATIVE.
     - ``recurrence-not-supported``: an answer is for a range of
@@ -134,7 +147,7 @@ def parse_reply(ics_data, attendee_email):
             continue
         recurrence_id = comp.get("RECURRENCE-ID")
         if recurrence_id is not None:
-            if _date_value(recurrence_id) is None:
+            if _date_value(recurrence_id) is None or _has_lost_timezone(recurrence_id):
                 return None, ReplyOutcome.UNPARSEABLE_REPLY
             if recurrence_id.params.get("RANGE"):
                 return None, ReplyOutcome.RECURRENCE_NOT_SUPPORTED

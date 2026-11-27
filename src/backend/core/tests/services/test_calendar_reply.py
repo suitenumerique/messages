@@ -444,6 +444,20 @@ def test_parse_reads_the_answer_in_upper_case():
     assert reply.answers[0].partstat == "ACCEPTED"
 
 
+def test_parse_refuses_a_recurrence_id_with_a_lost_time_zone():
+    ics = _reply(("RECURRENCE-ID;TZID=Custom/Zone:20260309T100000", "ACCEPTED", 0))
+
+    assert parse_reply(ics, ATTENDEE) == (None, "unparseable-reply")
+
+
+def test_parse_reads_a_floating_recurrence_id():
+    reply, _ = parse_reply(
+        _reply(("RECURRENCE-ID:20260309T100000", "ACCEPTED", 0)), ATTENDEE
+    )
+
+    assert reply.answers[0].recurrence_id.tzinfo is None
+
+
 @pytest.mark.parametrize("partstat", ["DELEGATED", "NEEDS-ACTION", "X-MAYBE"])
 def test_parse_refuses_an_answer_that_cannot_be_applied(partstat):
     ics = _reply((None, partstat, 0))
