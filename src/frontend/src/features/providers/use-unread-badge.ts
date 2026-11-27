@@ -14,7 +14,7 @@ import { listenForPushReceived } from "@/features/push/shared";
  * after load — see `unread-badge.ts`.
  *
  * The badge answers "something arrived while you were away", not "you have
- * unread mail": badging on `count_unread_threads > 0` leaves it lit forever for
+ * unread mail": badging on `count_unread_inbox > 0` leaves it lit forever for
  * anyone who keeps old unread threads around, which makes it worthless as a
  * signal. So arrivals are read as a rise of the unread total above a baseline:
  * the total the last time the tab was visible, lowered to follow the total
@@ -30,7 +30,7 @@ import { listenForPushReceived } from "@/features/push/shared";
 export const useUnreadBadge = () => {
   const { mailboxes } = useMailboxContext();
   const unreadTotal = mailboxes?.reduce(
-    (total, mailbox) => total + mailbox.count_unread_threads,
+    (total, mailbox) => total + mailbox.count_unread_inbox,
     0,
   );
   /** Unread total the last time the tab was visible. Stays `undefined` until

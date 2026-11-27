@@ -11,6 +11,7 @@ const makeMailbox = (overrides: Partial<Mailbox> & Pick<Mailbox, 'id' | 'email'>
   is_shared: true,
   role: MailboxRoleChoices.viewer,
   count_unread_threads: 0,
+  count_unread_inbox: 0,
   count_threads: 0,
   count_delivering: 0,
   count_unread_mentions: 0,

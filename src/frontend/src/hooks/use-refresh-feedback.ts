@@ -29,14 +29,14 @@ export const useRefreshFeedback = (): UseRefreshFeedbackResult => {
     const { selectedMailbox, refetchMailboxes } = useMailboxContext();
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [feedback, setFeedback] = useState<string | null>(null);
-    // Snapshot of count_unread_threads at refresh start. Read once isRefreshing
+    // Snapshot of count_unread_inbox at refresh start. Read once isRefreshing
     // flips back to false AND React has committed the new mailbox data — at that
     // point we know the delta.
     const baselineUnreadCountRef = useRef<number | null>(null);
     // The re-entrance guard lives in a ref: `refresh` is handed to gesture
     // hooks that may call the instance of a previous render.
     const isRefreshingRef = useRef(false);
-    const unreadCount = selectedMailbox?.count_unread_threads ?? 0;
+    const unreadCount = selectedMailbox?.count_unread_inbox ?? 0;
 
     useEffect(() => {
         if (isRefreshing || baselineUnreadCountRef.current === null) return;
