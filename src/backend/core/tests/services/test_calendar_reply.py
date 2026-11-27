@@ -608,7 +608,7 @@ def test_open_xchange_answer_for_an_excluded_date_is_ignored(caplog):
         ]
     )
 
-    with caplog.at_level("INFO", logger="core.services.calendar.service"):
+    with caplog.at_level("INFO", logger="core.services.calendar.reply"):
         outcomes, events = _apply(ics, stored)
 
     assert outcomes == ["no-matching-occurrence"]

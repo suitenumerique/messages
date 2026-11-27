@@ -3406,7 +3406,7 @@ def test_enqueue_itip_reply_does_not_use_a_paused_caldav_channel(mailbox):
     assert delay.call_args.kwargs["user_email"] == user.email
 
 
-def _run_apply_reply_task(apply_reply_results):
+def _run_apply_reply_task(apply_reply_results, **kwargs):
     """Run the task with a fake service and return the ``apply_reply`` mock."""
     service = mock.Mock()
     service.apply_reply.side_effect = apply_reply_results
@@ -3419,6 +3419,7 @@ def _run_apply_reply_task(apply_reply_results):
                 "user_email": "user@example.com",
                 "ics_data": "ICS",
                 "attendee_email": "alice@corp.example",
+                **kwargs,
             }
         )
     return service.apply_reply
@@ -3450,16 +3451,17 @@ def test_apply_reply_task_retries_when_the_cache_fails(error):
 
 
 def test_apply_reply_task_holds_a_lock_for_the_organizer():
-    key = "calendar_apply_reply_lock:user@example.com"
+    key = "calendar_apply_reply_lock:organizer@example.com"
     seen = []
 
     def apply_reply(**_kwargs):
         seen.append(cache.get(key))
         return {"applied": True, "reason": "applied"}
 
-    _run_apply_reply_task(apply_reply)
+    _run_apply_reply_task(apply_reply, organizer_email="organizer@example.com")
 
-    assert seen != [None]
+    assert len(seen) == 1
+    assert seen[0]
     assert cache.get(key) is None
 
 
@@ -3734,6 +3736,9 @@ class TestApplyReplyInboundE2E:
         self, settings, mailbox, caldav_channel, radicale_with_calendar
     ):
         settings.CALDAV_ITIP_REPLY_ENABLED = True
+        # An unverified reply would apply: only the fail verdict stops it.
+        settings.CALDAV_ITIP_REPLY_APPLY_UNVERIFIED = True
+        settings.SPAM_CONFIG = {"inbound_auth": "native"}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-forged@example.com"
         self._seed(put_event, uid, str(mailbox))
@@ -3748,17 +3753,24 @@ class TestApplyReplyInboundE2E:
         msg = models.Message.objects.filter(thread__accesses__mailbox=mailbox).latest(
             "created_at"
         )
+        assert msg.get_stmsg_headers().get("sender-auth") == "fail"
         assert msg.get_stmsg_headers().get("itip-reply") is None
 
     def test_flag_off_does_not_apply(
         self, settings, mailbox, caldav_channel, radicale_with_calendar
     ):
         settings.CALDAV_ITIP_REPLY_ENABLED = False
+        # A verified reply: only the switch stops it.
+        settings.SPAM_CONFIG = {"inbound_auth": "native"}
         calendar_url, put_event = radicale_with_calendar
         uid = "e2e-flagoff@example.com"
         self._seed(put_event, uid, str(mailbox))
 
-        self._deliver(str(mailbox), uid)
+        with mock.patch(
+            "core.mda.inbound_pipeline.check_inbound_authentication",
+            return_value=None,
+        ):
+            self._deliver(str(mailbox), uid)
 
         assert self._partstat(calendar_url, uid) == "NEEDS-ACTION"
 

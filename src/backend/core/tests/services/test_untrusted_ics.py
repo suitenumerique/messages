@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import pytest
 from icalendar import Calendar as ICalendar
+from icalendar.timezone import tzp
 
 from core.services.calendar.untrusted_ics import parse_untrusted_ics
 
@@ -33,7 +34,8 @@ def _offset(cal):
 
 
 def test_time_zone_of_another_parse_is_not_used():
-    ICalendar.from_ical(_reply(POISON))
+    tzp.use_default()
+    assert _offset(ICalendar.from_ical(_reply(POISON))) == timedelta(hours=-23)
 
     assert _offset(parse_untrusted_ics(_reply())) == timedelta(hours=1)
 
