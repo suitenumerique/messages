@@ -185,6 +185,7 @@ const ConflictTimeline = ({
                                         title={`${e.summary} · ${label(span)}`}
                                     >
                                         <span className="conflict-timeline__bar-text">{e.summary}</span>
+                                        <span className="c__offscreen">{` ${label(span)}`}</span>
                                     </span>
                                 );
                             })}
