@@ -46,6 +46,7 @@ pytestmark = pytest.mark.django_db
     PUSH_VAPID_PRIVATE_KEY=None,
     PUSH_VAPID_PUBLIC_KEY=None,
     FRONTEND_THEME_CONFIG=None,
+    FEATURE_CLIENTBRIDGE=False,
 )
 @pytest.mark.parametrize("is_authenticated", [False, True])
 def test_api_config(is_authenticated):

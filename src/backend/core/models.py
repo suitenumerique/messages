@@ -738,9 +738,9 @@ class Channel(BaseModel):
     # --- secret rotation --- #
 
     # Secret storage shapes per channel type — deliberately divergent.
-    # ``api_key`` channels store only a SHA-256 hash so a DB read can't
-    # yield a working credential (server hashes incoming ``X-API-Key``
-    # and compares). ``webhook`` channels store plaintext under the
+    # ``api_key`` and ``client-bridge`` channels store only a SHA-256 hash
+    # so a DB read can't yield a working credential (server hashes the
+    # incoming key or password and compares). ``webhook`` channels store plaintext under the
     # generic ``encrypted_settings["secret"]`` key because the
     # dispatcher needs the raw bytes every fire to sign / send;
     # future channel types that need a plaintext root reuse the same
@@ -757,6 +757,13 @@ class Channel(BaseModel):
     # Context label for the webhook API-key derivation. Versioned so
     # we can roll the KDF without changing the root secret.
     WEBHOOK_API_KEY_KDF_LABEL = b"messages.webhook.api_key.v1"
+
+    # Client-bridge passwords get typed by hand into mail clients: base58
+    # leaves out look-alike characters (0, O, I, l).
+    CLIENT_BRIDGE_PASSWORD_ALPHABET = (
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"  # noqa: S105
+    )
+    CLIENT_BRIDGE_PASSWORD_LENGTH = 16  # ~94 bits
 
     def rotate_secret(self, *, save: bool = True) -> str:
         """Mint a fresh plaintext secret appropriate for this channel
@@ -794,6 +801,17 @@ class Channel(BaseModel):
             self.encrypted_settings = {
                 **(self.encrypted_settings or {}),
                 "secret": plaintext,
+            }
+        elif self.type == ChannelTypes.CLIENT_BRIDGE:
+            plaintext = "".join(
+                secrets.choice(self.CLIENT_BRIDGE_PASSWORD_ALPHABET)
+                for _ in range(self.CLIENT_BRIDGE_PASSWORD_LENGTH)
+            )
+            # Random high-entropy secret like api_key: SHA-256 is enough.
+            digest = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+            self.encrypted_settings = {
+                **(self.encrypted_settings or {}),
+                "password_hash": digest,
             }
         else:
             raise ValueError(f"Channel type {self.type!r} has no rotatable secret")

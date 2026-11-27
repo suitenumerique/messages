@@ -248,6 +248,9 @@ class ChannelTypes(StrEnum):
     # device's push token lives in ``encrypted_settings``; ``settings`` carries
     # the platform + a token hash for dedup/reclaim. See core.services.push.
     PUSH = "push"
+    # App password for email clients (IMAP/SMTP through src/client-bridge).
+    # Acts as the user who created it, on one mailbox, within its scopes.
+    CLIENT_BRIDGE = "client-bridge"
 
 
 class ImportSource(StrEnum):
@@ -391,6 +394,12 @@ class ChannelApiKeyScope(models.TextChoices):
     MAILDOMAINS_READ = "maildomains:read", "Read maildomains"
     MESSAGES_SEND = "messages:send", "Send outbound messages"
     MAILDOMAINS_CREATE = "maildomains:create", "Create new maildomains"
+    # Enforced for app passwords (client-bridge channels) through the
+    # ``app_password_scopes`` declared on the thread, message and flag views.
+    THREADS_READ = "threads:read", "Read thread metadata"
+    MESSAGES_READ = "messages:read", "Read message metadata"
+    MESSAGES_READ_BODY = "messages:read.body", "Read message bodies"
+    THREADS_WRITE = "threads:write", "Archive/star/label"
 
     # Forward-looking scopes — DO NOT uncomment without a real endpoint
     # enforcing them. Listed here so the planned vocabulary is visible at a
@@ -400,15 +409,11 @@ class ChannelApiKeyScope(models.TextChoices):
     #   USERS_READ         = "users:read",             "Read users"
     #   LABELS_READ        = "labels:read",            "Read labels"
     #   CONTACTS_READ      = "contacts:read",          "Read contacts"
-    #   THREADS_READ       = "threads:read",           "Read thread metadata"
-    #   MESSAGES_READ      = "messages:read",          "Read message metadata"
-    #   MESSAGES_READ_BODY = "messages:read.body",     "Read message bodies"
     #   ATTACHMENTS_READ   = "attachments:read",       "Read attachments"
     #   BLOBS_READ         = "blobs:read",             "Read raw MIME blobs"
     #
     # Writes (update an object the channel already has access to):
     #   MESSAGES_WRITE     = "messages:write",         "Create/modify drafts"
-    #   THREADS_WRITE      = "threads:write",          "Archive/star/label"
     #   LABELS_WRITE       = "labels:write",           "Create/modify labels"
     #   CONTACTS_WRITE     = "contacts:write",         "Create/modify contacts"
     #   MAILBOXES_WRITE    = "mailboxes:write",        "Update existing mailboxes"
@@ -428,6 +433,23 @@ CHANNEL_API_KEY_SCOPES_GLOBAL_ONLY = frozenset(
         ChannelApiKeyScope.METRICS_READ.value,
         ChannelApiKeyScope.MAILDOMAINS_CREATE.value,
     }
+)
+
+# Scopes an app password (client-bridge channel) may hold. They are enforced
+# on endpoints acting as the channel's user, so api_key channels, which act
+# as nobody, may not hold the read/write ones.
+APP_PASSWORD_SCOPES = frozenset(
+    {
+        ChannelApiKeyScope.THREADS_READ.value,
+        ChannelApiKeyScope.MESSAGES_READ.value,
+        ChannelApiKeyScope.MESSAGES_READ_BODY.value,
+        ChannelApiKeyScope.THREADS_WRITE.value,
+        ChannelApiKeyScope.MESSAGES_SEND.value,
+    }
+)
+API_KEY_SCOPES = frozenset(
+    {scope.value for scope in ChannelApiKeyScope}
+    - (APP_PASSWORD_SCOPES - {ChannelApiKeyScope.MESSAGES_SEND.value})
 )
 
 

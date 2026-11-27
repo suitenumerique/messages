@@ -459,6 +459,31 @@
                                                 "message"
                                             ],
                                             "readOnly": true
+                                        },
+                                        "CLIENTBRIDGE_PUBLIC_CONFIG": {
+                                            "type": "object",
+                                            "description": "Client-bridge IMAP/SMTP connection settings for email clients.",
+                                            "properties": {
+                                                "imap_host": {
+                                                    "type": "string"
+                                                },
+                                                "imap_port": {
+                                                    "type": "integer"
+                                                },
+                                                "imap_security": {
+                                                    "type": "string"
+                                                },
+                                                "smtp_host": {
+                                                    "type": "string"
+                                                },
+                                                "smtp_port": {
+                                                    "type": "integer"
+                                                },
+                                                "smtp_security": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "readOnly": true
                                         }
                                     },
                                     "required": [
@@ -3258,7 +3283,7 @@
                                 }
                             }
                         },
-                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` / ``password`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
                         "description": "Channel type has no rotatable secret"
@@ -7868,7 +7893,7 @@
                                 }
                             }
                         },
-                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
+                        "description": "Rotates the channel's secret. Single-active: the previous credential is invalidated immediately. The response carries exactly one of ``api_key`` / ``secret`` / ``password`` matching the channel's type (and, for webhooks, its current ``auth_method``)."
                     },
                     "400": {
                         "description": "Channel type has no rotatable secret"
@@ -8313,6 +8338,10 @@
                     "secret": {
                         "type": "string",
                         "description": "webhook channels with auth_method=jwt — the HMAC/JWT signing secret."
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "client-bridge channels — the IMAP/SMTP app password."
                     }
                 },
                 "required": [
@@ -11083,6 +11112,10 @@
                     "secret": {
                         "type": "string",
                         "description": "Present for webhook channels with ``auth_method='jwt'`` — the freshly minted root receivers use to verify the HMAC sig and JWT."
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Present for client-bridge channels — the new IMAP/SMTP app password. Returned ONCE."
                     }
                 },
                 "required": [
@@ -12178,6 +12211,17 @@
                     "auth",
                     "p256dh"
                 ]
+            },
+            "AppPasswordScopeEnum": {
+                "type": "string",
+                "enum": [
+                    "messages:read",
+                    "messages:read.body",
+                    "messages:send",
+                    "threads:read",
+                    "threads:write"
+                ],
+                "description": "A scope an app password (client-bridge channel) may hold."
             }
         },
         "securitySchemes": {

@@ -454,7 +454,7 @@ class TestChannelViewSetIsolation:  # pylint: disable=too-many-public-methods
         scope by PATCHing settings on an existing api_key channel.
 
         This is the airtight test for the bug where
-        ``_validate_api_key_scopes`` returned early when ``type`` wasn't in
+        ``_validate_channel_scopes`` returned early when ``type`` wasn't in
         attrs (the typical PATCH shape), letting the new scopes through
         unvalidated."""
         mailbox = MailboxFactory()

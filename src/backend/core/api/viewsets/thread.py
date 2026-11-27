@@ -21,6 +21,7 @@ from rest_framework.response import Response
 
 from core import enums, models
 from core.ai.thread_summarizer import summarize_thread
+from core.api.authentication import with_app_password
 from core.services.search import parse_search_query, search_threads
 from core.services.thread_stats import (
     STATS_FIELDS,
@@ -43,6 +44,8 @@ class ThreadViewSet(
 
     serializer_class = serializers.ThreadSerializer
     permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = with_app_password()
+    app_password_scopes = {"list": enums.ChannelApiKeyScope.THREADS_READ}
     lookup_field = "pk"
     lookup_url_kwarg = "pk"
 

@@ -467,6 +467,49 @@ services:
       target: uv
     pull_policy: build
 
+  client-bridge:
+    build:
+      context: src/client-bridge
+      target: runtime-prod
+    env_file:
+      - deploy/env/client-bridge.defaults
+      - deploy/env/client-bridge.local
+    ports:
+      - "8919:143"
+      - "8921:587"
+    depends_on:
+      - backend-dev
+
+  client-bridge-test:
+    profiles:
+      - tools
+    build:
+      context: src/client-bridge
+      target: runtime-dev
+    env_file:
+      - deploy/env/client-bridge.defaults
+      - deploy/env/client-bridge.local
+    environment:
+      - EXEC_CMD=true
+      - IMAP_HOST=localhost
+      - IMAP_PORT=1143
+      - SMTP_HOST=localhost
+      - SMTP_PORT=1587
+      - MOCK_API_PORT=8765
+    command: pytest -vvs tests/
+    volumes:
+      - ./src/client-bridge:/app
+
+  client-bridge-uv:
+    profiles:
+      - tools
+    volumes:
+      - ./src/client-bridge:/app
+    build:
+      context: src/client-bridge
+      target: uv
+    pull_policy: build
+
   # ---- Pure-Python (pymta) inbound MTA -----------------------------------
   # Runs side-by-side with the Postfix-based `mta-in` service on a different
   # host port (8920 vs 8910). Both implementations share the same MDA

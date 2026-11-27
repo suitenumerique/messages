@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { Channel, Mailbox } from "@/features/api/gen";
 import { WidgetIntegrationForm } from "./widget-integration-form";
 import { WebhookIntegrationForm } from "./webhook-integration-form";
+import { ClientBridgeIntegrationForm } from "./client-bridge-integration-form";
 import { useConfig } from "@/features/providers/config";
 import i18n from "@/features/i18n/initI18n";
 
@@ -17,7 +18,7 @@ type ModalComposeIntegrationProps = {
     onSuccess?: () => void;
 };
 
-type ChannelType = "widget" | "api_key" | "webhook";
+type ChannelType = "widget" | "api_key" | "webhook" | "client-bridge";
 type ViewState = "select_type" | "form";
 
 type ChannelTypeCardProps = {
@@ -55,7 +56,13 @@ const CHANNEL_TYPE_METADATA: Partial<Record<ChannelType, ChannelTypeMetadata>> =
         title: i18n.t("Outbound Webhook"),
         description: i18n.t("Forward every incoming message to a URL of your choice."),
         icon: "webhook",
-    }
+    },
+    "client-bridge": {
+        type: "client-bridge",
+        title: i18n.t("Email client access"),
+        description: i18n.t("Connect your mailbox to an email client like Thunderbird or to your mobile phone using IMAP and SMTP."),
+        icon: "mail_lock",
+    },
 };
 
 const ChannelTypeCard = ({ title, description, icon, disabled, onClick }: ChannelTypeCardProps) => {
@@ -161,6 +168,9 @@ export const ModalComposeIntegration = ({
         else if (selectedType === "webhook") {
             label = isEditing ? t("Edit Webhook") : t("Create a Webhook");
         }
+        else if (selectedType === "client-bridge") {
+            label = isEditing ? t("Edit email client access") : t("Create email client access");
+        }
         else {
             label = t("Integrations");
         }
@@ -214,6 +224,14 @@ export const ModalComposeIntegration = ({
                 )}
                 {viewState === "form" && selectedType === "webhook" && (
                     <WebhookIntegrationForm
+                        mailbox={mailbox}
+                        channel={currentChannel}
+                        onSuccess={handleSuccess}
+                        onClose={onClose}
+                    />
+                )}
+                {viewState === "form" && selectedType === "client-bridge" && (
+                    <ClientBridgeIntegrationForm
                         mailbox={mailbox}
                         channel={currentChannel}
                         onSuccess={handleSuccess}

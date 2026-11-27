@@ -69,6 +69,7 @@ create-env-files: \
 	deploy/env/frontend.local \
 	deploy/env/mta-in.local \
 	deploy/env/mta-in-py.local \
+	deploy/env/client-bridge.local \
 	deploy/env/socks-proxy.local
 .PHONY: create-env-files
 
@@ -233,7 +234,8 @@ start-full: check-bootstrapped build-python-base $(KEYCLOAK_THEME_JAR) ## start 
 		worker-dev \
 		worker-ui \
 		mta-in-py \
-		mpa
+		mpa \
+		client-bridge
 .PHONY: start-full
 
 status: ## an alias for "docker compose ps"
@@ -310,7 +312,8 @@ lint: \
   lint-front \
   typecheck-front \
   lint-mta-in \
-  lint-mta-in-py
+  lint-mta-in-py \
+  lint-client-bridge
 .PHONY: lint
 
 lint-check:  ## run all linters in check mode (no auto-fix)
@@ -318,7 +321,8 @@ lint-check: \
   lint-check-back \
   typecheck-front \
   lint-front \
-  lint-keycloak-theme
+  lint-keycloak-theme \
+  lint-check-client-bridge
 .PHONY: lint-check
 
 lint-back: build-python-base ## run back-end linters (with auto-fix)
@@ -369,6 +373,14 @@ lint-mta-in-py: ## lint mta-in python sources (pure-Python pymta implementation)
 	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true mta-in-py-test ruff check . --fix
 .PHONY: lint-mta-in-py
 
+lint-client-bridge: build-python-base ## lint client-bridge python sources
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format .
+.PHONY: lint-client-bridge
+
+lint-check-client-bridge: build-python-base ## lint client-bridge python sources in check mode (no auto-fix)
+	$(COMPOSE_RUN) --rm -e EXEC_CMD_ONLY=true client-bridge-test ruff format --check .
+.PHONY: lint-check-client-bridge
+
 
 # -- Tests
 
@@ -378,6 +390,7 @@ test: \
   test-front \
   test-mta-in \
   test-mta-in-py \
+  test-client-bridge \
   test-mpa \
   test-socks-proxy
 .PHONY: test
@@ -437,6 +450,10 @@ fuzz-mta-in-py-intensive: ## run the pymta fuzz suite with 10x more examples (ab
 	@FUZZ_EXAMPLES=19000 $(MAKE) fuzz-mta-in-py
 .PHONY: fuzz-mta-in-py-intensive
 
+
+test-client-bridge: build-python-base ## run the client-bridge tests
+	@$(COMPOSE) run --build --rm client-bridge-test
+.PHONY: test-client-bridge
 
 test-mpa: build-python-base ## run the mpa tests
 	@$(COMPOSE) run --build --rm mpa-test
@@ -562,6 +579,7 @@ down-e2e: stop-e2e ## alias for stop-e2e
 demo-e2e: ## Populate the e2e database with demo data
 	@echo "$(BLUE)\n\n| 📝 Bootstrapping E2E demo data... \n$(RESET)"
 	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_demo
+	@$(COMPOSE_E2E) run --rm backend python manage.py e2e_clientbridge
 .PHONY: demo-e2e
 
 start-e2e: $(KEYCLOAK_THEME_JAR) ## Start e2e services (migrate, seed, etc.)
@@ -961,3 +979,6 @@ deps-audit-mta-in: build-python-base ## audit mta-in dependencies (all extras) f
 	@$(COMPOSE) run --rm --no-deps -e HOME=/tmp -e EXEC_CMD_ONLY=true --build mta-in-test pip-audit
 .PHONY: deps-audit-mta-in
 
+deps-lock-client-bridge: build-python-base ## lock the client-bridge dependencies
+	@$(COMPOSE) run --rm --build client-bridge-uv uv lock
+.PHONY: deps-lock-client-bridge

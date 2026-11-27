@@ -2648,7 +2648,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         # ``type`` is writable on CREATE only — once a channel exists its
         # type is frozen. PATCHing type=widget on an api_key channel
         # would let a mailbox admin sneak around the create-time scope
-        # check (the new type wouldn't trip _validate_api_key_scopes) or
+        # check (the new type wouldn't trip _validate_channel_scopes) or
         # strand encrypted_settings on a row whose type the auth class
         # no longer recognizes. Lock it down via CreateOnlyFieldsMixin.
         create_only_fields = ["type"]
@@ -2670,14 +2670,27 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         # same bytes back both auth methods (JWT/HMAC and API key) —
         # see ``Channel.rotate_secret``.
         enums.ChannelTypes.WEBHOOK: ["secret"],
+        # Server-generated app password, hashed into encrypted_settings.
+        enums.ChannelTypes.CLIENT_BRIDGE: ["password", "password_hash"],
     }
 
     # Channel types that mint a plaintext secret on create. The
     # viewset surfaces the minted value via the right response key
     # (``api_key`` for api_key channels and api_key webhooks, ``secret``
-    # for jwt webhooks — keyed by ``settings.auth_method``).
+    # for jwt webhooks — keyed by ``settings.auth_method``, ``password``
+    # for client-bridge channels).
     _ROTATABLE_TYPES = frozenset(
-        {enums.ChannelTypes.API_KEY, enums.ChannelTypes.WEBHOOK}
+        {
+            enums.ChannelTypes.API_KEY,
+            enums.ChannelTypes.WEBHOOK,
+            enums.ChannelTypes.CLIENT_BRIDGE,
+        }
+    )
+
+    # Types storing only a hash: the plaintext must be stashed on the
+    # instance for the create response (see ``_attach_credential``).
+    HASHED_SECRET_TYPES = frozenset(
+        {enums.ChannelTypes.API_KEY, enums.ChannelTypes.CLIENT_BRIDGE}
     )
 
     @extend_schema_field(serializers.CharField(allow_null=True))
@@ -2711,8 +2724,8 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         instance = super().create(validated_data)
 
         # pylint: disable=protected-access
-        if plaintext is not None and instance.type == enums.ChannelTypes.API_KEY:
-            instance._generated_api_key = plaintext  # noqa: SLF001
+        if plaintext is not None and instance.type in self.HASHED_SECRET_TYPES:
+            instance._generated_secret = plaintext  # noqa: SLF001
         return instance
 
     def validate_settings(self, value):
@@ -2825,8 +2838,14 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
 
         return channel_type, settings_data, True
 
-    def _validate_api_key_scopes(self, attrs):
-        """Validate the ``settings["scopes"]`` list on api_key channels.
+    # Scopes each scoped channel type may hold (see ``enums.APP_PASSWORD_SCOPES``).
+    SCOPES_BY_TYPE = {
+        enums.ChannelTypes.API_KEY: enums.API_KEY_SCOPES,
+        enums.ChannelTypes.CLIENT_BRIDGE: enums.APP_PASSWORD_SCOPES,
+    }
+
+    def _validate_channel_scopes(self, attrs):
+        """Validate the ``settings["scopes"]`` list on scoped channel types.
 
         Runs on every CREATE and on every PATCH/PUT that touches ``type``
         or ``settings``. The validator looks at the EFFECTIVE post-save
@@ -2834,7 +2853,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         which is the only way to airtight-block a mailbox admin from
         granting themselves a global-only scope via a settings-only PATCH.
 
-        - Every value must be a member of ``ChannelApiKeyScope``.
+        - Every value must be allowed for the channel type (``SCOPES_BY_TYPE``).
         - Global-only scopes (e.g. ``maildomains:create``) can only be
           requested when the channel itself has ``scope_level=global``.
           Since DRF clients cannot set scope_level, this always rejects
@@ -2843,14 +2862,15 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         channel_type, settings_data, should_validate = self._resolve_type_and_settings(
             attrs
         )
-        if not should_validate or channel_type != enums.ChannelTypes.API_KEY:
+        if not should_validate or channel_type not in self.SCOPES_BY_TYPE:
             return
 
         raw_scopes = settings_data.get("scopes")
         if raw_scopes is None:
             raise serializers.ValidationError(
                 {
-                    "settings": "api_key channels require settings.scopes (a list of strings)."
+                    "settings": f"{channel_type} channels require settings.scopes "
+                    "(a list of strings)."
                 }
             )
         if not isinstance(raw_scopes, list) or not all(
@@ -2860,11 +2880,11 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                 {"settings": "settings.scopes must be a list of strings."}
             )
 
-        valid_values = {choice.value for choice in enums.ChannelApiKeyScope}
+        valid_values = self.SCOPES_BY_TYPE[channel_type]
         unknown = [s for s in raw_scopes if s not in valid_values]
         if unknown:
             raise serializers.ValidationError(
-                {"settings": f"Unknown api_key scopes: {unknown}"}
+                {"settings": f"Unknown {channel_type} scopes: {unknown}"}
             )
 
         # Any DRF path to this serializer is mailbox-nested or user-nested
@@ -2882,7 +2902,7 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
         """Validate required fields on webhook channel settings.
 
         Runs on CREATE and on every PATCH/PUT touching ``type`` or
-        ``settings``. Same airtight rule as ``_validate_api_key_scopes``:
+        ``settings``. Same airtight rule as ``_validate_channel_scopes``:
         a settings-only PATCH on an existing webhook channel must hit the
         URL/trigger validators, otherwise a mailbox admin could PATCH
         ``{"settings": {"url": "javascript:..."}}`` past the create-time
@@ -2994,6 +3014,16 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                 }
             )
 
+    def _validate_client_bridge_enabled(self, attrs):
+        """Refuse creating client-bridge channels when the feature is off."""
+        if (
+            attrs.get("type") == enums.ChannelTypes.CLIENT_BRIDGE
+            and not settings.FEATURE_CLIENTBRIDGE
+        ):
+            raise serializers.ValidationError(
+                {"type": "The client bridge is not enabled."}
+            )
+
     def validate(self, attrs):
         """Validate channel data.
 
@@ -3050,9 +3080,19 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
                             "type=push); only `name` may be updated."
                         }
                     )
+            # The client bridge logs in by mailbox address, so a channel
+            # without a mailbox could never authenticate.
+            if (
+                self.context.get("user_channel")
+                and channel_type == enums.ChannelTypes.CLIENT_BRIDGE
+            ):
+                raise serializers.ValidationError(
+                    {"type": "client-bridge channels must belong to a mailbox."}
+                )
             self._reject_caller_supplied_encrypted_keys(attrs)
-            self._validate_api_key_scopes(attrs)
+            self._validate_channel_scopes(attrs)
             self._validate_webhook_settings(attrs)
+            self._validate_client_bridge_enabled(attrs)
             return attrs
 
         mailbox = attrs.get("mailbox")
@@ -3070,8 +3110,9 @@ class ChannelSerializer(CreateOnlyFieldsMixin, serializers.ModelSerializer):
             )
 
         self._reject_caller_supplied_encrypted_keys(attrs)
-        self._validate_api_key_scopes(attrs)
+        self._validate_channel_scopes(attrs)
         self._validate_webhook_settings(attrs)
+        self._validate_client_bridge_enabled(attrs)
         return attrs
 
 
@@ -3101,11 +3142,16 @@ class ChannelCreateResponseSerializer(ChannelSerializer):
         required=False,
         help_text="webhook channels with auth_method=jwt — the HMAC/JWT signing secret.",
     )
+    password = serializers.CharField(
+        required=False,
+        help_text="client-bridge channels — the IMAP/SMTP app password.",
+    )
 
     class Meta(ChannelSerializer.Meta):
         fields = ChannelSerializer.Meta.fields + [
             "api_key",
             "secret",
+            "password",
         ]
 
 

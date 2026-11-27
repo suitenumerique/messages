@@ -273,6 +273,30 @@ jobs:
       - name: Build and smoke-test the frontend production image
         run: make test-front-distroless
 
+  lint-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge linting
+        run: make lint-check-client-bridge
+
+  test-client-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create env files
+        run: make create-env-files
+      - name: Run client-bridge tests
+        run: make test-client-bridge
+
   check-api-state:
     runs-on: ubuntu-latest
     steps:

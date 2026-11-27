@@ -13,6 +13,7 @@ from core.api.viewsets.calendar import (
     CalendarRsvpView,
 )
 from core.api.viewsets.channel import ChannelViewSet, UserChannelViewSet
+from core.api.viewsets.client_bridge import ClientBridgeChannelView
 from core.api.viewsets.config import ConfigView
 from core.api.viewsets.contacts import ContactViewSet
 from core.api.viewsets.draft import DraftMessageView
@@ -336,6 +337,17 @@ urlpatterns = [
         name="mta-inbound-email",
     ),
 ]
+
+if settings.FEATURE_CLIENTBRIDGE:
+    urlpatterns += [
+        # Credential check at IMAP/SMTP login for the client-bridge service.
+        # Sending goes through the regular /submit/ endpoint.
+        path(
+            f"api/{settings.API_VERSION}/client-bridge/channel/",
+            ClientBridgeChannelView.as_view(),
+            name="client-bridge-channel",
+        ),
+    ]
 
 if settings.DRIVE_CONFIG.get("base_url"):
     urlpatterns += [

@@ -30,10 +30,19 @@ async function runNpmCommand(command: string, args: string[] = [], timeout: numb
 
 /**
  * Reset the database by flushing all data (keeps schema) then
- * bootstrapping the demo data.
+ * bootstrapping the demo data (without client-bridge data).
  */
 export async function resetDatabase(): Promise<void> {
   await runNpmCommand('db:reset');
+}
+
+/**
+ * Bootstrap client-bridge channels and IMAP test messages.
+ * Only needed by client-bridge tests, separated to avoid the cost
+ * of recreating EML blobs on every resetDatabase() call.
+ */
+export async function bootstrapClientBridge(): Promise<void> {
+  await runNpmCommand('db:bootstrap-clientbridge');
 }
 
 export const getStorageStatePath = (username: string): string => {
