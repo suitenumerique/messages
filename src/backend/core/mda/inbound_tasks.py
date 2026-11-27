@@ -360,7 +360,8 @@ def _enqueue_itip_reply(
         return
 
     emails = list(
-        mailbox.accesses.exclude(user__email="")
+        mailbox.accesses.exclude(user__email__isnull=True)
+        .exclude(user__email="")
         .values_list("user__email", flat=True)
         .distinct()[: _ITIP_FANOUT_CAP + 1]
     )

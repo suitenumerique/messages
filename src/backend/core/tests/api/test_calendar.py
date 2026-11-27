@@ -3331,6 +3331,22 @@ def test_enqueue_itip_reply_fans_out_to_mailbox_users(mailbox):
 
 
 @pytest.mark.django_db()
+@pytest.mark.parametrize("email", [None, ""])
+def test_enqueue_itip_reply_skips_a_user_without_email(mailbox, email):
+    user = factories.UserFactory(email=email)
+    factories.MailboxAccessFactory(
+        mailbox=mailbox, user=user, role=MailboxRoleChoices.ADMIN
+    )
+
+    with mock.patch(
+        "core.services.calendar.tasks.calendar_apply_reply_task.delay"
+    ) as delay:
+        _enqueue_itip_reply(mailbox, "ICS", "alice@corp.example")
+
+    assert delay.call_count == 0
+
+
+@pytest.mark.django_db()
 def test_enqueue_itip_reply_fans_out_across_all_caldav_channels(mailbox):
     c1 = factories.ChannelFactory(
         mailbox=mailbox,
