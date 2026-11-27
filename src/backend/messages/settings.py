@@ -592,6 +592,17 @@ class Base(Configuration):
     CALDAV_DEFAULT_WEB_URL = values.Value(
         None, environ_name="CALDAV_DEFAULT_WEB_URL", environ_prefix=None
     )
+    CALDAV_ITIP_REPLY_ENABLED = values.BooleanValue(
+        False, environ_name="CALDAV_ITIP_REPLY_ENABLED", environ_prefix=None
+    )
+    # Also apply the REPLYs whose From address is not proven, and flag them as
+    # unverified. By default, a REPLY needs an aligned From: DMARC passes, or
+    # the From domain signs the message. Only safe where From cannot be forged.
+    CALDAV_ITIP_REPLY_APPLY_UNVERIFIED = values.BooleanValue(
+        False,
+        environ_name="CALDAV_ITIP_REPLY_APPLY_UNVERIFIED",
+        environ_prefix=None,
+    )
 
     # Spam filtering settings
 

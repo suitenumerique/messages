@@ -23,6 +23,7 @@ from jmap_email import first_address_email, parse_email
 from jmap_email.types import JmapEmail
 
 from core import models
+from core.mda import itip
 from core.mda.addresses import normalize_address
 from core.mda.dispatch_webhooks import (
     dispatch_recorded_webhooks,
@@ -51,6 +52,9 @@ from core.services.push import enqueue_push_notifications
 from messages.celery_app import app as celery_app
 
 logger = get_task_logger(__name__)
+
+# Max CalDAV apply tasks fanned out per inbound iTIP REPLY (one per mailbox user).
+_ITIP_FANOUT_CAP = 50
 
 
 # Hard ceiling on one inbound task's wall-clock (Celery kills the task here).
@@ -265,6 +269,128 @@ def _abandon(inbound_message: models.InboundMessage, reason: str) -> Dict[str, A
     }
 
 
+def _itip_reply_to_apply(ctx, inbound_message, mailbox, deferral_expired):
+    """Return the ICS and the attendee of an iTIP REPLY to apply.
+
+    Returns ``(None, None)`` when the message has no REPLY to apply. Else,
+    records the trust flag of the REPLY in the postmark.
+    """
+    if not settings.CALDAV_ITIP_REPLY_ENABLED or ctx.is_spam or deferral_expired:
+        return None, None
+    # An absent verdict is not sufficient to write to a calendar: it does not
+    # prove the From address. Internal mail comes from an authenticated
+    # mailbox. Other mail needs an aligned From.
+    auth_verdict = ctx.postmark.get("auth")
+    if auth_verdict is None and not (
+        inbound_message.is_internal or ctx.from_authenticated
+    ):
+        auth_verdict = "none"
+    ics, itip_flag, attendee = itip.evaluate_inbound_reply(
+        ctx.parsed_email,
+        auth_verdict,
+        settings.CALDAV_ITIP_REPLY_APPLY_UNVERIFIED,
+    )
+    # Without a calendar backend, the flag would claim an update that never
+    # happens.
+    if not ics or not _caldav_configured(mailbox):
+        return None, None
+    ctx.postmark["itip-reply"] = itip_flag
+    return ics, attendee
+
+
+def _caldav_configured(mailbox: models.Mailbox) -> bool:
+    """Whether a CalDAV backend is reachable: instance-default or per-mailbox."""
+    from core.enums import ChannelTypes  # pylint: disable=import-outside-toplevel
+
+    if settings.CALDAV_DEFAULT_URL and settings.CALDAV_DEFAULT_PASSWORD:
+        return True
+    return models.Channel.objects.filter(
+        mailbox=mailbox, type=ChannelTypes.CALDAV, is_active=True
+    ).exists()
+
+
+def _enqueue_itip_reply(
+    mailbox: models.Mailbox,
+    ics_data: str,
+    attendee_email: str,
+    received_at: float | None = None,
+) -> None:
+    """Start the tasks that apply an inbound iTIP REPLY.
+
+    Each active CalDAV channel of the mailbox gets one task. Without such a
+    channel, each user of the mailbox gets one task. In a shared mailbox, any
+    user can hold the event of the organizer. ``apply_reply`` does nothing
+    where the UID is absent.
+
+    ``attendee_email`` is the verified sender. It is the only ATTENDEE that
+    the task can change. ``received_at`` is the time when the mailbox
+    received the reply, in seconds. It gives the order of the replies.
+
+    TODO(itip-ratelimit): a sender with a domain that passes DMARC can send
+    crafted replies. Each reply makes one time-range REPORT for each writable
+    calendar. Add a rate limit per sender domain and mailbox here when the
+    project has one.
+    """
+    # These imports are here to prevent an import cycle between task modules.
+    from core.enums import (  # pylint: disable=import-outside-toplevel
+        ChannelTypes,
+    )
+    from core.services.calendar.tasks import (  # pylint: disable=import-outside-toplevel
+        calendar_apply_reply_task,
+    )
+
+    organizer_email = str(mailbox)
+    channel_ids = list(
+        models.Channel.objects.filter(
+            mailbox=mailbox, type=ChannelTypes.CALDAV, is_active=True
+        ).values_list("id", flat=True)
+    )
+    if channel_ids:
+        # The organizer's event may live on any of the mailbox's CalDAV channels;
+        # apply_reply no-ops on the ones that don't hold the UID.
+        for channel_id in channel_ids:
+            calendar_apply_reply_task.delay(
+                channel_id=str(channel_id),
+                user_email=str(mailbox),
+                ics_data=ics_data,
+                attendee_email=attendee_email,
+                organizer_email=organizer_email,
+                received_at=received_at,
+            )
+        return
+
+    emails = list(
+        mailbox.accesses.exclude(user__email="")
+        .values_list("user__email", flat=True)
+        .distinct()[: _ITIP_FANOUT_CAP + 1]
+    )
+    if not emails:
+        logger.info(
+            "iTIP REPLY for mailbox %s: no CalDAV channel and no user identity; skipping",
+            mailbox.id,
+        )
+        return
+    if len(emails) > _ITIP_FANOUT_CAP:
+        # Bound the per-reply fan-out. Full per-(sender,mailbox) rate limiting is
+        # still TODO; this just stops a pathological access count from spraying
+        # apply tasks. Legitimate mailboxes are far below the cap.
+        logger.warning(
+            "iTIP REPLY for mailbox %s: capping fan-out at %d of many users",
+            mailbox.id,
+            _ITIP_FANOUT_CAP,
+        )
+        emails = emails[:_ITIP_FANOUT_CAP]
+    for email in emails:
+        calendar_apply_reply_task.delay(
+            channel_id=None,
+            user_email=email,
+            ics_data=ics_data,
+            attendee_email=attendee_email,
+            organizer_email=organizer_email,
+            received_at=received_at,
+        )
+
+
 def _stamp_processing_failed(ctx: InboundContext) -> None:
     """Record the ``processing`` failure marker in ``ctx.postmark``.
 
@@ -454,6 +580,10 @@ def process_inbound_message_task(self, inbound_message_id: str):
         # Same reasoning for how the message arrived: only the envelope knows.
         _record_transport_security(ctx.postmark, inbound_message.envelope or {})
 
+        itip_reply_ics, itip_reply_attendee = _itip_reply_to_apply(
+            ctx, inbound_message, mailbox, deferral_expired
+        )
+
         with transaction.atomic():
             inbound_msg = _create_message_from_inbound(
                 recipient_email=ctx.recipient_email,
@@ -552,6 +682,17 @@ def process_inbound_message_task(self, inbound_message_id: str):
                     ctx.pending_webhooks,
                     lambda: dispatch_recorded_webhooks(
                         inbound_msg, mailbox, ctx.pending_webhooks
+                    ),
+                )
+                _safe_finalize(
+                    "itip-reply",
+                    inbound_message_id,
+                    itip_reply_ics,
+                    lambda: _enqueue_itip_reply(
+                        mailbox,
+                        itip_reply_ics,
+                        itip_reply_attendee,
+                        inbound_message.created_at.timestamp(),
                     ),
                 )
 
